@@ -7,7 +7,10 @@ import {
   addWorkoutLog,
   clearAllLogs,
   getAllLogs,
-  saveUserProfile
+  saveUserProfile,
+  checkSyncStatus,
+  syncLocalLogsToCloud,
+  SyncStatus
 } from './utils/storage';
 import { HeaderTabNav } from './components/HeaderTabNav';
 import { TodayTrackerForm } from './components/TodayTrackerForm';
@@ -21,24 +24,34 @@ export default function App() {
   const [allLogs, setAllLogs] = useState<WorkoutLog[]>([]);
   const [statsJM, setStatsJM] = useState<UserStats | null>(null);
   const [statsKAT, setStatsKAT] = useState<UserStats | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshData = useCallback(async () => {
     setAllLogs(await getAllLogs());
-    const [profilesData, sJM, sKAT] = await Promise.all([
+    const [profilesData, sJM, sKAT, sSync] = await Promise.all([
       getUserProfiles(),
       calculateUserStats('JM'),
-      calculateUserStats('KAT')
+      calculateUserStats('KAT'),
+      checkSyncStatus()
     ]);
     setProfiles(profilesData);
     setStatsJM(sJM);
     setStatsKAT(sKAT);
+    setSyncStatus(sSync);
   }, []);
 
   useEffect(() => {
     (async () => {
       setIsLoading(true);
       try {
+        // One-time recovery: if this browser has history trapped in
+        // localStorage (saved while cloud was unavailable), push it to
+        // Supabase so every device can see it. Only runs when Supabase is
+        // configured and there are local logs; failure here is non-fatal.
+        await syncLocalLogsToCloud().catch(err => {
+          console.error('[sync] Local history upload failed:', err);
+        });
         await refreshData();
       } finally {
         setIsLoading(false);
@@ -93,6 +106,7 @@ export default function App() {
         profiles={profiles}
         statsJM={statsJM}
         statsKAT={statsKAT}
+        syncStatus={syncStatus}
         onResetData={handleClearData}
         onSaveProfile={handleSaveProfile}
       />

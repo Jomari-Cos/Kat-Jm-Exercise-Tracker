@@ -488,3 +488,90 @@ export async function clearAllLogs(): Promise<void> {
 
   localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify([]));
 }
+
+// ---------------------------------------------------------------------------
+// Sync status (used to surface whether data is cloud-synced or device-only)
+// ---------------------------------------------------------------------------
+
+export interface SyncStatus {
+  mode: 'cloud' | 'local';
+  connected: boolean;
+  error: string | null;
+}
+
+export async function checkSyncStatus(): Promise<SyncStatus> {
+  if (!isSupabaseConfigured()) {
+    return {
+      mode: 'local',
+      connected: false,
+      error: 'Supabase not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY). Data is stored only in this browser.'
+    };
+  }
+
+  try {
+    const { error } = await supabase!.from(LOGS_TABLE).select('id').limit(1);
+    if (error) {
+      return {
+        mode: 'cloud',
+        connected: false,
+        error: error.message
+      };
+    }
+    return { mode: 'cloud', connected: true, error: null };
+  } catch (err) {
+    return {
+      mode: 'cloud',
+      connected: false,
+      error: err instanceof Error ? err.message : String(err)
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One-time migration: push any device-local (localStorage) history to the
+// cloud when Supabase becomes available. This recovers logs that were saved
+// in a browser while the deployed app was running without cloud credentials.
+//
+// It is idempotent: existing cloud rows are never duplicated (matched by id),
+// and localStorage is cleared only after a fully successful upload.
+// ---------------------------------------------------------------------------
+
+export async function syncLocalLogsToCloud(): Promise<{ uploaded: number; total: number }> {
+  const localLogs = lsGetAllLogs();
+  if (localLogs.length === 0) {
+    return { uploaded: 0, total: 0 };
+  }
+
+  if (!isSupabaseConfigured()) {
+    return { uploaded: 0, total: localLogs.length };
+  }
+
+  const { data, error } = await supabase!
+    .from(LOGS_TABLE)
+    .select('id');
+
+  if (error) {
+    console.error('[sync] Failed to read existing cloud log ids:', error.message);
+    throw new Error(error.message);
+  }
+
+  const existingIds = new Set<string>((data ?? []).map(r => (r as { id: string }).id));
+  const missing = localLogs.filter(l => !existingIds.has(l.id));
+
+  if (missing.length > 0) {
+    const { error: insertError } = await supabase!
+      .from(LOGS_TABLE)
+      .insert(missing.map(workoutLogToRow));
+
+    if (insertError) {
+      console.error('[sync] Failed to upload local history:', insertError.message);
+      throw new Error(insertError.message);
+    }
+  }
+
+  // Only clear localStorage after the upload succeeded so nothing is lost.
+  lsSaveAllLogs([]);
+
+  console.log(`[sync] Uploaded ${missing.length} local workout log(s) to the cloud.`);
+  return { uploaded: missing.length, total: localLogs.length };
+}

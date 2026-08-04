@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { UserProfile, UserStats, UserType } from '../types';
-import { Flame, Activity, RefreshCw, Settings2 } from 'lucide-react';
+import { Flame, Activity, RefreshCw, Settings2, Cloud, CloudOff } from 'lucide-react';
 import { UserProfileModal } from './UserProfileModal';
+import type { SyncStatus } from '../utils/storage';
 
 interface HeaderTabNavProps {
   activeTab: UserType | 'BOTH';
@@ -9,6 +10,7 @@ interface HeaderTabNavProps {
   profiles: Record<UserType, UserProfile>;
   statsJM: UserStats;
   statsKAT: UserStats;
+  syncStatus?: SyncStatus | null;
   onResetData?: () => void;
   onSaveProfile?: (user: UserType, profile: UserProfile) => Promise<void> | void;
 }
@@ -19,10 +21,12 @@ export const HeaderTabNav: React.FC<HeaderTabNavProps> = ({
   profiles,
   statsJM,
   statsKAT,
+  syncStatus,
   onResetData,
   onSaveProfile
 }) => {
   const [profileModalUser, setProfileModalUser] = useState<UserType | null>(null);
+  const [showSyncTooltip, setShowSyncTooltip] = useState(false);
 
   const currentActiveStreak =
     activeTab === 'JM'
@@ -95,7 +99,51 @@ export const HeaderTabNav: React.FC<HeaderTabNavProps> = ({
       </nav>
 
       {/* Streak Badge & Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {syncStatus && (
+          <div className="relative">
+            <button
+              onClick={() => setShowSyncTooltip(v => !v)}
+              onMouseEnter={() => setShowSyncTooltip(true)}
+              onMouseLeave={() => setShowSyncTooltip(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border shadow-2xs transition ${syncStatus.connected
+                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-amber-50/90 border-amber-200 text-amber-700 hover:bg-amber-100'
+                }`}
+              title={syncStatus.connected ? 'Cloud sync enabled' : 'Not syncing to cloud'}
+            >
+              {syncStatus.connected ? (
+                <Cloud className="w-4 h-4" />
+              ) : (
+                <CloudOff className="w-4 h-4" />
+              )}
+              <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline">
+                {syncStatus.connected ? 'Cloud Sync' : 'Device Only'}
+              </span>
+            </button>
+
+            {showSyncTooltip && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 text-white text-xs font-medium rounded-2xl px-4 py-3 shadow-xl z-50">
+                {syncStatus.connected ? (
+                  <>
+                    <p className="font-black uppercase tracking-wider text-emerald-400 mb-1">Cloud Sync Active</p>
+                    <p className="text-slate-200">
+                      Workout history is saved to Supabase and will appear on any device.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-black uppercase tracking-wider text-amber-400 mb-1">Device-Only Storage</p>
+                    <p className="text-slate-200">
+                      {syncStatus.error || 'History is saved only in this browser and will not appear on other devices.'}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 bg-pink-50/80 px-3.5 py-1.5 rounded-2xl border border-pink-200">
           <span className="text-xs font-black text-pink-700 uppercase tracking-widest hidden sm:inline">
             STREAK:
