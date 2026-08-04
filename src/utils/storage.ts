@@ -1,0 +1,490 @@
+import { UserProfile, UserStats, UserType, WorkoutLog } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+// Default user identities for Jm & Kat (used only as fallback if profiles
+// don't exist yet in the database - these are the real users, not mockup data)
+const DEFAULT_PROFILES: Record<UserType, UserProfile> = {
+  JM: {
+    id: 'JM',
+    name: 'Jm',
+    nickname: 'Jm',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    themeColor: 'teal',
+    bgGradient: 'from-teal-500 to-emerald-600',
+    weeklyGoalMins: 180,
+    favExercise: 'Strength',
+    bio: 'Pushing limits day by day 💪'
+  },
+  KAT: {
+    id: 'KAT',
+    name: 'Kat',
+    nickname: 'Kat',
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80',
+    themeColor: 'rose',
+    bgGradient: 'from-rose-500 to-pink-600',
+    weeklyGoalMins: 150,
+    favExercise: 'Pilates',
+    bio: 'Consistency > Intensity ✨'
+  }
+};
+
+const LOGS_STORAGE_KEY = 'jm_kat_exercise_logs_v1';
+const PROFILES_STORAGE_KEY = 'jm_kat_user_profiles_v1';
+
+// ---------------------------------------------------------------------------
+// Pure date helpers
+// ---------------------------------------------------------------------------
+
+export function getTodayDateStr(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function formatDatePretty(dateStr: string): string {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day);
+
+  const today = getTodayDateStr();
+  if (dateStr === today) {
+    return 'Today, ' + dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  if (dateStr === yesterdayStr) {
+    return 'Yesterday, ' + dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  return dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ---------------------------------------------------------------------------
+// DB row <-> TS interface mappers
+// ---------------------------------------------------------------------------
+
+interface WorkoutLogRow {
+  id: string;
+  user: UserType;
+  date: string;
+  timestamp: number;
+  exercise_type: string;
+  custom_name: string | null;
+  duration_mins: number;
+  calories_burned: number | null;
+  notes: string | null;
+  proof_photo_url: string | null;
+  ai_feedback: string | null;
+  mood: string | null;
+  location: string | null;
+}
+
+const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
+  id: row.id,
+  user: row.user,
+  date: row.date,
+  timestamp: row.timestamp,
+  exerciseType: row.exercise_type as WorkoutLog['exerciseType'],
+  customName: row.custom_name ?? undefined,
+  durationMins: row.duration_mins,
+  caloriesBurned: row.calories_burned ?? undefined,
+  notes: row.notes ?? undefined,
+  proofPhotoUrl: row.proof_photo_url ?? undefined,
+  aiFeedback: row.ai_feedback ?? undefined,
+  mood: row.mood ?? undefined,
+  location: row.location ?? undefined,
+});
+
+const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => ({
+  id: log.id,
+  user: log.user,
+  date: log.date,
+  timestamp: log.timestamp,
+  exercise_type: log.exerciseType,
+  custom_name: log.customName ?? null,
+  duration_mins: log.durationMins,
+  calories_burned: log.caloriesBurned ?? null,
+  notes: log.notes ?? null,
+  proof_photo_url: log.proofPhotoUrl ?? null,
+  ai_feedback: log.aiFeedback ?? null,
+  mood: log.mood ?? null,
+  location: log.location ?? null,
+});
+
+interface UserProfileRow {
+  id: UserType;
+  name: string;
+  nickname: string;
+  avatar: string;
+  theme_color: string;
+  bg_gradient: string;
+  weekly_goal_mins: number;
+  fav_exercise: string;
+  bio: string;
+}
+
+const rowToUserProfile = (row: UserProfileRow): UserProfile => ({
+  id: row.id,
+  name: row.name,
+  nickname: row.nickname,
+  avatar: row.avatar,
+  themeColor: row.theme_color,
+  bgGradient: row.bg_gradient,
+  weeklyGoalMins: row.weekly_goal_mins,
+  favExercise: row.fav_exercise as UserProfile['favExercise'],
+  bio: row.bio,
+});
+
+const userProfileToRow = (profile: UserProfile): UserProfileRow => ({
+  id: profile.id,
+  name: profile.name,
+  nickname: profile.nickname,
+  avatar: profile.avatar,
+  theme_color: profile.themeColor,
+  bg_gradient: profile.bgGradient,
+  weekly_goal_mins: profile.weeklyGoalMins,
+  fav_exercise: profile.favExercise,
+  bio: profile.bio,
+});
+
+// ---------------------------------------------------------------------------
+// localStorage fallback (used only when Supabase is not configured)
+// ---------------------------------------------------------------------------
+
+const lsGetAllLogs = (): WorkoutLog[] => {
+  try {
+    const raw = localStorage.getItem(LOGS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch (err) {
+    console.error('Failed to load exercise logs from storage:', err);
+    return [];
+  }
+};
+
+const lsSaveAllLogs = (logs: WorkoutLog[]): void => {
+  try {
+    localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(logs));
+  } catch (err) {
+    console.error('Failed to save exercise logs:', err);
+  }
+};
+
+const lsGetUserProfiles = (): Record<UserType, UserProfile> => {
+  try {
+    const raw = localStorage.getItem(PROFILES_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    // fallback to defaults
+  }
+  return DEFAULT_PROFILES;
+};
+
+const lsSaveUserProfile = (user: UserType, profile: UserProfile): void => {
+  const profiles = lsGetUserProfiles();
+  profiles[user] = profile;
+  localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+};
+
+// ---------------------------------------------------------------------------
+// Supabase implementation (async) - real data only, no seeding
+// ---------------------------------------------------------------------------
+
+const LOGS_TABLE = 'workout_logs';
+const PROFILES_TABLE = 'user_profiles';
+
+const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from(LOGS_TABLE)
+    .select('*')
+    .order('timestamp', { ascending: false });
+
+  if (error) {
+    console.error('[supabase] Failed to fetch exercise logs:', error.message);
+    return [];
+  }
+
+  return (data ?? []).map(rowToWorkoutLog);
+};
+
+const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> => {
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const newLog: WorkoutLog = {
+    ...logData,
+    id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+    timestamp: Date.now()
+  };
+
+  const { error } = await supabase
+    .from(LOGS_TABLE)
+    .insert(workoutLogToRow(newLog));
+
+  if (error) {
+    console.error('[supabase] Failed to insert workout log:', error.message);
+    throw new Error(error.message);
+  }
+
+  return newLog;
+};
+
+const dbUpdateWorkoutLog = async (updatedLog: WorkoutLog): Promise<void> => {
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from(LOGS_TABLE)
+    .update(workoutLogToRow(updatedLog))
+    .eq('id', updatedLog.id);
+
+  if (error) {
+    console.error('[supabase] Failed to update workout log:', error.message);
+    throw new Error(error.message);
+  }
+};
+
+const dbDeleteWorkoutLog = async (id: string): Promise<void> => {
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from(LOGS_TABLE)
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('[supabase] Failed to delete workout log:', error.message);
+    throw new Error(error.message);
+  }
+};
+
+const dbGetUserProfiles = async (): Promise<Record<UserType, UserProfile>> => {
+  if (!supabase) return DEFAULT_PROFILES;
+
+  const { data, error } = await supabase
+    .from(PROFILES_TABLE)
+    .select('*');
+
+  if (error) {
+    console.error('[supabase] Failed to fetch user profiles:', error.message);
+    return DEFAULT_PROFILES;
+  }
+
+  const profiles = {} as Record<UserType, UserProfile>;
+  for (const row of (data ?? []) as UserProfileRow[]) {
+    profiles[row.id] = rowToUserProfile(row);
+  }
+
+  // Ensure both users present even if one row is missing
+  return {
+    ...DEFAULT_PROFILES,
+    ...profiles
+  };
+};
+
+const dbSaveUserProfile = async (user: UserType, profile: UserProfile): Promise<void> => {
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from(PROFILES_TABLE)
+    .upsert(userProfileToRow(profile), { onConflict: 'id' });
+
+  if (error) {
+    console.error('[supabase] Failed to save user profile:', error.message);
+    throw new Error(error.message);
+  }
+};
+
+const dbClearAllLogs = async (): Promise<void> => {
+  if (!supabase) return;
+
+  const { error: deleteLogsError } = await supabase
+    .from(LOGS_TABLE)
+    .delete()
+    .neq('id', '');
+
+  if (deleteLogsError) {
+    console.error('[supabase] Failed to clear workout logs:', deleteLogsError.message);
+    throw new Error(deleteLogsError.message);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Public data access API (async, Supabase first, localStorage fallback)
+// ---------------------------------------------------------------------------
+
+export async function getAllLogs(): Promise<WorkoutLog[]> {
+  if (isSupabaseConfigured()) {
+    return dbGetAllLogs();
+  }
+  return lsGetAllLogs();
+}
+
+export async function getLogsForUser(user: UserType): Promise<WorkoutLog[]> {
+  const logs = await getAllLogs();
+  return logs
+    .filter(l => l.user === user)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.timestamp - a.timestamp);
+}
+
+export async function addWorkoutLog(logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> {
+  if (isSupabaseConfigured()) {
+    return dbAddWorkoutLog(logData);
+  }
+
+  const logs = lsGetAllLogs();
+  const newLog: WorkoutLog = {
+    ...logData,
+    id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+    timestamp: Date.now()
+  };
+
+  const updated = [newLog, ...logs];
+  lsSaveAllLogs(updated);
+  return newLog;
+}
+
+export async function updateWorkoutLog(updatedLog: WorkoutLog): Promise<void> {
+  if (isSupabaseConfigured()) {
+    return dbUpdateWorkoutLog(updatedLog);
+  }
+
+  const logs = lsGetAllLogs();
+  const idx = logs.findIndex(l => l.id === updatedLog.id);
+  if (idx !== -1) {
+    logs[idx] = updatedLog;
+    lsSaveAllLogs(logs);
+  }
+}
+
+export async function deleteWorkoutLog(id: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    return dbDeleteWorkoutLog(id);
+  }
+
+  const logs = lsGetAllLogs();
+  const filtered = logs.filter(l => l.id !== id);
+  lsSaveAllLogs(filtered);
+}
+
+export async function getUserProfiles(): Promise<Record<UserType, UserProfile>> {
+  if (isSupabaseConfigured()) {
+    return dbGetUserProfiles();
+  }
+  return lsGetUserProfiles();
+}
+
+export async function saveUserProfile(user: UserType, profile: UserProfile): Promise<void> {
+  if (isSupabaseConfigured()) {
+    return dbSaveUserProfile(user, profile);
+  }
+  lsSaveUserProfile(user, profile);
+}
+
+export async function calculateUserStats(user: UserType): Promise<UserStats> {
+  const userLogs = await getLogsForUser(user);
+  const todayStr = getTodayDateStr();
+
+  const totalMins = userLogs.reduce((acc, l) => acc + (l.durationMins || 0), 0);
+  const totalWorkouts = userLogs.length;
+
+  const todayLog = userLogs.find(l => l.date === todayStr);
+  const loggedToday = !!todayLog;
+
+  // Streak calculation
+  const datesLogged = Array.from(new Set(userLogs.map(l => l.date))).sort().reverse();
+
+  let currentStreak = 0;
+  let checkDate = new Date();
+
+  // If not logged today, check if logged yesterday to maintain streak count
+  const todayInList = datesLogged.includes(todayStr);
+  if (!todayInList) {
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  while (true) {
+    const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+    if (datesLogged.includes(dateStr)) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  // Calculate best streak historically
+  let bestStreak = currentStreak;
+  let tempStreak = 0;
+  if (datesLogged.length > 0) {
+    const sortedAsc = [...datesLogged].sort();
+    let prevDate: Date | null = null;
+
+    for (const dStr of sortedAsc) {
+      const curDate = new Date(dStr);
+      if (prevDate) {
+        const diffDays = Math.round((curDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24));
+        if (diffDays === 1) {
+          tempStreak++;
+        } else {
+          tempStreak = 1;
+        }
+      } else {
+        tempStreak = 1;
+      }
+      if (tempStreak > bestStreak) {
+        bestStreak = tempStreak;
+      }
+      prevDate = curDate;
+    }
+  }
+
+  // Weekly & Monthly mins
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday as start or 7 days back
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const thisWeekMins = userLogs
+    .filter(l => new Date(l.date).getTime() >= startOfWeek.getTime())
+    .reduce((acc, l) => acc + l.durationMins, 0);
+
+  const thisMonthMins = userLogs
+    .filter(l => new Date(l.date).getTime() >= startOfMonth.getTime())
+    .reduce((acc, l) => acc + l.durationMins, 0);
+
+  const avgDurationMins = totalWorkouts > 0 ? Math.round(totalMins / totalWorkouts) : 0;
+
+  return {
+    totalMins,
+    totalWorkouts,
+    currentStreak,
+    bestStreak,
+    thisWeekMins,
+    thisMonthMins,
+    avgDurationMins,
+    loggedToday,
+    todayLog
+  };
+}
+
+export async function clearAllLogs(): Promise<void> {
+  if (isSupabaseConfigured()) {
+    return dbClearAllLogs();
+  }
+
+  localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify([]));
+}
