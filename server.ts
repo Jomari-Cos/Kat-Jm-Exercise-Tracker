@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
+dotenv.config({ path: '.env.local' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,18 @@ async function startServer() {
   // API Routes
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Supabase credentials for the client. The server has the real env vars
+  // injected at runtime (from .env / .env.local in dev, or the AI Studio
+  // environment/Secrets panel in production), so we hand them to the browser
+  // here rather than relying on Vite build-time vars that never reach the
+  // AI Studio cloud build.
+  app.get('/api/supabase-config', (req, res) => {
+    res.json({
+      url: process.env.VITE_SUPABASE_URL || '',
+      key: process.env.VITE_SUPABASE_ANON_KEY || ''
+    });
   });
 
   // Gemini AI Fitness Cheer & Analysis Endpoint

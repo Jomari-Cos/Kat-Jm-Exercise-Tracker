@@ -1,5 +1,5 @@
 import { UserProfile, UserStats, UserType, WorkoutLog } from '../types';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 // Default user identities for Jm & Kat (used only as fallback if profiles
 // don't exist yet in the database - these are the real users, not mockup data)
@@ -203,9 +203,10 @@ const LOGS_TABLE = 'workout_logs';
 const PROFILES_TABLE = 'user_profiles';
 
 const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
-  if (!supabase) return [];
+  const sb = await getSupabase();
+  if (!sb) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from(LOGS_TABLE)
     .select('*')
     .order('timestamp', { ascending: false });
@@ -219,7 +220,8 @@ const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
 };
 
 const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> => {
-  if (!supabase) {
+  const sb = await getSupabase();
+  if (!sb) {
     throw new Error('Supabase is not configured.');
   }
 
@@ -229,7 +231,7 @@ const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): P
     timestamp: Date.now()
   };
 
-  const { error } = await supabase
+  const { error } = await sb
     .from(LOGS_TABLE)
     .insert(workoutLogToRow(newLog));
 
@@ -242,9 +244,10 @@ const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): P
 };
 
 const dbUpdateWorkoutLog = async (updatedLog: WorkoutLog): Promise<void> => {
-  if (!supabase) return;
+  const sb = await getSupabase();
+  if (!sb) return;
 
-  const { error } = await supabase
+  const { error } = await sb
     .from(LOGS_TABLE)
     .update(workoutLogToRow(updatedLog))
     .eq('id', updatedLog.id);
@@ -256,9 +259,10 @@ const dbUpdateWorkoutLog = async (updatedLog: WorkoutLog): Promise<void> => {
 };
 
 const dbDeleteWorkoutLog = async (id: string): Promise<void> => {
-  if (!supabase) return;
+  const sb = await getSupabase();
+  if (!sb) return;
 
-  const { error } = await supabase
+  const { error } = await sb
     .from(LOGS_TABLE)
     .delete()
     .eq('id', id);
@@ -270,9 +274,10 @@ const dbDeleteWorkoutLog = async (id: string): Promise<void> => {
 };
 
 const dbGetUserProfiles = async (): Promise<Record<UserType, UserProfile>> => {
-  if (!supabase) return DEFAULT_PROFILES;
+  const sb = await getSupabase();
+  if (!sb) return DEFAULT_PROFILES;
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from(PROFILES_TABLE)
     .select('*');
 
@@ -294,9 +299,10 @@ const dbGetUserProfiles = async (): Promise<Record<UserType, UserProfile>> => {
 };
 
 const dbSaveUserProfile = async (user: UserType, profile: UserProfile): Promise<void> => {
-  if (!supabase) return;
+  const sb = await getSupabase();
+  if (!sb) return;
 
-  const { error } = await supabase
+  const { error } = await sb
     .from(PROFILES_TABLE)
     .upsert(userProfileToRow(profile), { onConflict: 'id' });
 
@@ -307,9 +313,10 @@ const dbSaveUserProfile = async (user: UserType, profile: UserProfile): Promise<
 };
 
 const dbClearAllLogs = async (): Promise<void> => {
-  if (!supabase) return;
+  const sb = await getSupabase();
+  if (!sb) return;
 
-  const { error: deleteLogsError } = await supabase
+  const { error: deleteLogsError } = await sb
     .from(LOGS_TABLE)
     .delete()
     .neq('id', '');
@@ -325,7 +332,7 @@ const dbClearAllLogs = async (): Promise<void> => {
 // ---------------------------------------------------------------------------
 
 export async function getAllLogs(): Promise<WorkoutLog[]> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbGetAllLogs();
   }
   return lsGetAllLogs();
@@ -339,7 +346,7 @@ export async function getLogsForUser(user: UserType): Promise<WorkoutLog[]> {
 }
 
 export async function addWorkoutLog(logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbAddWorkoutLog(logData);
   }
 
@@ -356,7 +363,7 @@ export async function addWorkoutLog(logData: Omit<WorkoutLog, 'id' | 'timestamp'
 }
 
 export async function updateWorkoutLog(updatedLog: WorkoutLog): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbUpdateWorkoutLog(updatedLog);
   }
 
@@ -369,7 +376,7 @@ export async function updateWorkoutLog(updatedLog: WorkoutLog): Promise<void> {
 }
 
 export async function deleteWorkoutLog(id: string): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbDeleteWorkoutLog(id);
   }
 
@@ -379,14 +386,14 @@ export async function deleteWorkoutLog(id: string): Promise<void> {
 }
 
 export async function getUserProfiles(): Promise<Record<UserType, UserProfile>> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbGetUserProfiles();
   }
   return lsGetUserProfiles();
 }
 
 export async function saveUserProfile(user: UserType, profile: UserProfile): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbSaveUserProfile(user, profile);
   }
   lsSaveUserProfile(user, profile);
@@ -482,7 +489,7 @@ export async function calculateUserStats(user: UserType): Promise<UserStats> {
 }
 
 export async function clearAllLogs(): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (await isSupabaseConfigured()) {
     return dbClearAllLogs();
   }
 
@@ -500,7 +507,7 @@ export interface SyncStatus {
 }
 
 export async function checkSyncStatus(): Promise<SyncStatus> {
-  if (!isSupabaseConfigured()) {
+  if (!(await isSupabaseConfigured())) {
     return {
       mode: 'local',
       connected: false,
@@ -509,7 +516,8 @@ export async function checkSyncStatus(): Promise<SyncStatus> {
   }
 
   try {
-    const { error } = await supabase!.from(LOGS_TABLE).select('id').limit(1);
+    const sb = await getSupabase();
+    const { error } = await sb!.from(LOGS_TABLE).select('id').limit(1);
     if (error) {
       return {
         mode: 'cloud',
@@ -542,11 +550,12 @@ export async function syncLocalLogsToCloud(): Promise<{ uploaded: number; total:
     return { uploaded: 0, total: 0 };
   }
 
-  if (!isSupabaseConfigured()) {
+  if (!(await isSupabaseConfigured())) {
     return { uploaded: 0, total: localLogs.length };
   }
 
-  const { data, error } = await supabase!
+  const sb = await getSupabase();
+  const { data, error } = await sb!
     .from(LOGS_TABLE)
     .select('id');
 
@@ -559,7 +568,7 @@ export async function syncLocalLogsToCloud(): Promise<{ uploaded: number; total:
   const missing = localLogs.filter(l => !existingIds.has(l.id));
 
   if (missing.length > 0) {
-    const { error: insertError } = await supabase!
+    const { error: insertError } = await sb!
       .from(LOGS_TABLE)
       .insert(missing.map(workoutLogToRow));
 
