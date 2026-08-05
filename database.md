@@ -1,4 +1,4 @@
-# Database Structure Documentation
+﻿# Database Structure Documentation
 
 This document outlines the data model, storage strategy, collections, schemas, and persistence utilities for the **Kat & Jm Workout Tracker** application.
 
@@ -119,7 +119,7 @@ Dynamically computed from `WorkoutLog[]` entries for a given user.
     "id": "JM",
     "name": "Jm",
     "nickname": "Jm",
-    "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+    "avatar": "/avatars/jm.png",
     "themeColor": "teal",
     "bgGradient": "from-teal-500 to-emerald-600",
     "weeklyGoalMins": 180,
@@ -130,7 +130,7 @@ Dynamically computed from `WorkoutLog[]` entries for a given user.
     "id": "KAT",
     "name": "Kat",
     "nickname": "Kat",
-    "avatar": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80",
+    "avatar": "/avatars/kat.png",
     "themeColor": "rose",
     "bgGradient": "from-rose-500 to-pink-600",
     "weeklyGoalMins": 150,
@@ -178,3 +178,4 @@ The application provides a centralized data layer for querying and updating reco
   "feedback": "🔥 Fantastic job hitting that new bench press PR, Jm! 45 minutes of dedicated lifting is building serious power."
 }
 ```
+

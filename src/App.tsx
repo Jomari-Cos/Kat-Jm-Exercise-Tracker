@@ -16,6 +16,7 @@ import { HeaderTabNav } from './components/HeaderTabNav';
 import { TodayTrackerForm } from './components/TodayTrackerForm';
 import { HistoryList } from './components/HistoryList';
 import { UserStatsSummary } from './components/UserStatsSummary';
+import { ProfileGoalCard } from './components/ProfileGoalCard';
 import { Activity } from 'lucide-react';
 
 export default function App() {
@@ -147,6 +148,12 @@ export default function App() {
               </div>
             </div>
 
+            {/* Kat & Jm Profile + Weekly Goal cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <ProfileGoalCard user="KAT" profile={profiles.KAT} stats={statsKAT} />
+              <ProfileGoalCard user="JM" profile={profiles.JM} stats={statsJM} />
+            </div>
+
             {/* Side by side columns: Kat first, Jm second */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* KAT COLUMN (Pink) */}
@@ -205,6 +212,15 @@ export default function App() {
         ) : (
           /* Single User Layout with 3/5 and 2/5 columns */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Profile & Weekly Goal (full width) */}
+            <section className="lg:col-span-12">
+              <ProfileGoalCard
+                user={activeTab}
+                profile={profiles[activeTab]}
+                stats={activeTab === 'JM' ? statsJM : statsKAT}
+              />
+            </section>
+
             {/* Left Column (3/5): Today's Input */}
             <section className="lg:col-span-7 flex flex-col gap-6">
               <TodayTrackerForm

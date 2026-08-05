@@ -1,6 +1,13 @@
 import { UserProfile, UserStats, UserType, WorkoutLog } from '../types';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
+// Default avatars are served from the static `public/avatars` assets so every
+// user has a real photo without depending on a remote image host.
+export const DEFAULT_AVATARS: Record<UserType, string> = {
+  JM: '/avatars/jm.png',
+  KAT: '/avatars/kat.png',
+};
+
 // Default user identities for Jm & Kat (used only as fallback if profiles
 // don't exist yet in the database - these are the real users, not mockup data)
 const DEFAULT_PROFILES: Record<UserType, UserProfile> = {
@@ -8,7 +15,7 @@ const DEFAULT_PROFILES: Record<UserType, UserProfile> = {
     id: 'JM',
     name: 'Jm',
     nickname: 'Jm',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    avatar: DEFAULT_AVATARS.JM,
     themeColor: 'teal',
     bgGradient: 'from-teal-500 to-emerald-600',
     weeklyGoalMins: 180,
@@ -19,7 +26,7 @@ const DEFAULT_PROFILES: Record<UserType, UserProfile> = {
     id: 'KAT',
     name: 'Kat',
     nickname: 'Kat',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80',
+    avatar: DEFAULT_AVATARS.KAT,
     themeColor: 'rose',
     bgGradient: 'from-rose-500 to-pink-600',
     weeklyGoalMins: 150,
