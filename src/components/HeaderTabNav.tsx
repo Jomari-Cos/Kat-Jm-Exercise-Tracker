@@ -193,6 +193,7 @@ export const HeaderTabNav: React.FC<HeaderTabNavProps> = ({
       {/* Profile edit modal */}
       {profileModalUser && onSaveProfile && (
         <UserProfileModal
+          key={profileModalUser}
           user={profileModalUser}
           profile={profiles[profileModalUser]}
           isOpen={true}

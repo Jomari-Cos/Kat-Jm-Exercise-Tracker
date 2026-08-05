@@ -144,7 +144,7 @@ const rowToUserProfile = (row: UserProfileRow): UserProfile => ({
   bgGradient: row.bg_gradient,
   weeklyGoalMins: row.weekly_goal_mins,
   favExercise: row.fav_exercise as UserProfile['favExercise'],
-  bio: row.bio,
+  bio: row.bio ?? DEFAULT_PROFILES[row.id as UserType]?.bio ?? '',
 });
 
 const userProfileToRow = (profile: UserProfile): UserProfileRow => ({

@@ -19,7 +19,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onSave
 }) => {
   const [weeklyGoalMins, setWeeklyGoalMins] = useState<number>(profile.weeklyGoalMins);
-  const [bio, setBio] = useState<string>(profile.bio);
+  const [bio, setBio] = useState<string>(profile.bio ?? '');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Avatar editor state

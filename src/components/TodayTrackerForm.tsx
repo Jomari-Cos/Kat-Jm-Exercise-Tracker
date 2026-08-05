@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile, UserStats, UserType, ExerciseCategory, WorkoutLog } from '../types';
-import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon } from 'lucide-react';
+import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import { getTodayDateStr } from '../utils/storage';
 import { CameraCaptureModal } from './CameraCaptureModal';
 
@@ -63,8 +63,11 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [showAddAnother, setShowAddAnother] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+        e.preventDefault();
     if (durationMins <= 0) return;
+
+    // Require a proof photo before a session can be logged
+    if (!proofPhoto) return;
 
     setIsSubmitting(true);
 
@@ -293,7 +296,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className={`block text-xs sm:text-sm font-black uppercase tracking-widest ${primaryText}`}>
-                Proof of Exercise
+                Proof of Exercise <span className="text-rose-500">(Required)</span>
               </label>
               {proofPhoto && (
                 <button
@@ -336,8 +339,15 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
                   Smart watch, gym selfie, or shoes
                 </p>
               </div>
-            )}
+                        )}
           </div>
+
+          {!proofPhoto && (
+            <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 mt-1">
+              <AlertCircle className="w-4 h-4" />
+              A photo proof is required to log a session
+            </p>
+          )}
 
           {/* Additional details */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
@@ -390,11 +400,13 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
 
           {/* Submit button */}
           <button
-            type="submit"
-            disabled={isSubmitting || durationMins <= 0}
-            className={`w-full ${primaryBg} text-white text-lg sm:text-xl font-black py-5 rounded-3xl shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2`}
+                        type="submit"
+            disabled={isSubmitting || durationMins <= 0 || !proofPhoto}
+            className={`w-full ${primaryBg} text-white text-lg sm:text-xl font-black py-5 rounded-3xl shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed`}
           >
-            {isSubmitting ? (
+            {!proofPhoto ? (
+              <span>ADD PROOF TO LOG</span>
+            ) : isSubmitting ? (
               <span>LOGGING WORKOUT...</span>
             ) : (
               <span>LOG SESSION ({durationMins} MINS)</span>
