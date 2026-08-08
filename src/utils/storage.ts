@@ -115,25 +115,32 @@ const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
   endTime: row.end_time ?? undefined,
 });
 
-const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => ({
-  id: log.id,
-  user: log.user,
-  date: log.date,
-  timestamp: log.timestamp,
-  exercise_type: log.exerciseType,
-  custom_name: log.customName ?? null,
-  duration_mins: log.durationMins,
-  calories_burned: log.caloriesBurned ?? null,
-  notes: log.notes ?? null,
-  proof_photo_url: log.proofPhotoUrl ?? null,
-  ai_feedback: log.aiFeedback ?? null,
-  mood: log.mood ?? null,
-  location: log.location ?? null,
-  steps: log.steps ?? null,
-  distance_meters: log.distanceMeters ?? null,
-  start_time: log.startTime ?? null,
-  end_time: log.endTime ?? null,
-});
+const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => {
+  const row: Record<string, unknown> = {
+    id: log.id,
+    user: log.user,
+    date: log.date,
+    timestamp: log.timestamp,
+    exercise_type: log.exerciseType,
+    custom_name: log.customName ?? null,
+    duration_mins: log.durationMins,
+    calories_burned: log.caloriesBurned ?? null,
+    notes: log.notes ?? null,
+    proof_photo_url: log.proofPhotoUrl ?? null,
+    ai_feedback: log.aiFeedback ?? null,
+    mood: log.mood ?? null,
+    location: log.location ?? null
+  };
+
+  // Auto-tracking columns are only sent when present, so databases that haven't
+  // received migration 0002 can still accept ordinary (manual) workout logs.
+  if (log.steps !== undefined) row.steps = log.steps;
+  if (log.distanceMeters !== undefined) row.distance_meters = log.distanceMeters;
+  if (log.startTime !== undefined) row.start_time = log.startTime;
+  if (log.endTime !== undefined) row.end_time = log.endTime;
+
+  return row as Omit<WorkoutLogRow, 'date'> & { date: string };
+};
 
 interface UserProfileRow {
   id: UserType;
@@ -238,6 +245,38 @@ const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
   return (data ?? []).map(rowToWorkoutLog);
 };
 
+const TRACKING_COLUMNS = ['steps', 'distance_meters', 'start_time', 'end_time'];
+
+/**
+ * Insert workout log row(s) into Supabase, gracefully retrying without the
+ * auto-tracking columns if the database hasn't been migrated yet (0002). This
+ * lets sessions still log even when the new columns don't exist yet — they
+ * simply won't persist steps/distance/time until the migration is applied.
+ */
+async function dbInsertWorkoutLogs(
+  sb: NonNullable<Awaited<ReturnType<typeof getSupabase>>>,
+  rows: Array<Omit<WorkoutLogRow, 'date'> & { date: string }>
+): Promise<void> {
+  let { error } = await sb.from(LOGS_TABLE).insert(rows);
+
+  if (error && /could not find the '[a-z_]+' column of 'workout_logs' in the schema cache/i.test(error.message)) {
+    console.warn(
+      '[supabase] workout_logs is missing auto-tracking columns (run migration 0002_add_session_tracking.sql). ' +
+        'Retrying insert without steps/distance/time.'
+    );
+    const stripped = rows.map((row) => {
+      const base: Record<string, unknown> = { ...row };
+      for (const key of TRACKING_COLUMNS) delete base[key];
+      return base;
+    });
+    ({ error } = await sb.from(LOGS_TABLE).insert(stripped));
+  }
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> => {
   const sb = await getSupabase();
   if (!sb) {
@@ -250,13 +289,11 @@ const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): P
     timestamp: Date.now()
   };
 
-  const { error } = await sb
-    .from(LOGS_TABLE)
-    .insert(workoutLogToRow(newLog));
-
-  if (error) {
-    console.error('[supabase] Failed to insert workout log:', error.message);
-    throw new Error(error.message);
+  try {
+    await dbInsertWorkoutLogs(sb, [workoutLogToRow(newLog)]);
+  } catch (err) {
+    console.error('[supabase] Failed to insert workout log:', err instanceof Error ? err.message : String(err));
+    throw err;
   }
 
   return newLog;
@@ -587,13 +624,12 @@ export async function syncLocalLogsToCloud(): Promise<{ uploaded: number; total:
   const missing = localLogs.filter(l => !existingIds.has(l.id));
 
   if (missing.length > 0) {
-    const { error: insertError } = await sb!
-      .from(LOGS_TABLE)
-      .insert(missing.map(workoutLogToRow));
-
-    if (insertError) {
-      console.error('[sync] Failed to upload local history:', insertError.message);
-      throw new Error(insertError.message);
+    try {
+      await dbInsertWorkoutLogs(sb!, missing.map(workoutLogToRow));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[sync] Failed to upload local history:', message);
+      throw new Error(message);
     }
   }
 

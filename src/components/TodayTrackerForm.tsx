@@ -64,6 +64,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showAddAnother, setShowAddAnother] = useState<boolean>(false);
   const [session, setSession] = useState<StepSession | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // When true, the next captured proof photo immediately logs the tracked session.
   const autoLogAfterPhotoRef = useRef(false);
@@ -81,6 +82,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   // Submit a log entry with an explicitly provided proof photo. Used both by the
   // regular "LOG SESSION" button and by the automatic session flow (photo -> log).
   const performLog = async (photo: string) => {
+    setSubmitError(null);
     setIsSubmitting(true);
 
     let feedback = '';
@@ -98,9 +100,14 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           imageBase64: photo
         })
       });
-      const data = await resp.json();
-      if (data.feedback) {
-        feedback = data.feedback;
+      // The AI cheer is optional: if the endpoint is missing/offline (e.g. static
+      // hosting without the Express API), fail softly and log without feedback.
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.feedback) feedback = data.feedback;
+        else if (data.error) console.warn('AI motivation:', data.error);
+      } else {
+        console.warn('AI motivation endpoint unavailable (HTTP ' + resp.status + '); continuing without feedback.');
       }
     } catch (err) {
       console.error('AI motivation error:', err);
@@ -123,12 +130,20 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       aiFeedback: feedback || undefined
     };
 
-    await onLogSubmit(logData);
-    setIsSubmitting(false);
-    setShowAddAnother(false);
-    setProofPhoto(null);
-    setSession(null);
-    setNotes('');
+    try {
+      await onLogSubmit(logData);
+      setIsSubmitting(false);
+      setShowAddAnother(false);
+      setProofPhoto(null);
+      setSession(null);
+      setNotes('');
+    } catch (err) {
+      console.error('Failed to log workout:', err);
+      setSubmitError(
+        err instanceof Error ? err.message : 'Failed to save the workout log. Please try again.'
+      );
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -478,6 +493,13 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
               className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400 resize-none"
             />
           </div>
+
+          {submitError && (
+            <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2.5 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              {submitError}
+            </p>
+          )}
 
           {/* Submit button */}
           <button
