@@ -191,34 +191,47 @@ export const HistoryCalendar: React.FC<HistoryCalendarProps> = ({
               const isToday = dateStr === todayStr;
               const isSelected = dateStr === selectedDate;
               const hasLogs = dayLogs.length > 0;
+              const cellPhoto = dayLogs.find((l) => l.proofPhotoUrl)?.proofPhotoUrl;
+              const usePhotoBg = hasLogs && !!cellPhoto && !isSelected;
+              const dayColor = isSelected || usePhotoBg ? 'text-white' : isToday ? 'text-indigo-600' : '';
+              const badgeColor = isSelected || usePhotoBg ? 'text-white/90' : accentLight;
 
               return (
                 <button
                   key={dateStr}
                   onClick={() => setSelectedDate(dateStr)}
-                  className={`relative aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition
+                  className={`relative aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center gap-0.5 transition
                     ${
                       isSelected
                         ? `${accentBg} text-white shadow-md`
-                        : hasLogs
-                          ? isJm
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-slate-800'
-                            : 'bg-pink-50 hover:bg-pink-100 text-slate-800'
-                          : 'text-slate-400 hover:bg-slate-100'
+                        : usePhotoBg
+                          ? 'text-white'
+                          : hasLogs
+                            ? isJm
+                              ? 'bg-emerald-50 hover:bg-emerald-100 text-slate-800'
+                              : 'bg-pink-50 hover:bg-pink-100 text-slate-800'
+                            : 'text-slate-400 hover:bg-slate-100'
                     }
                     ${isToday && !isSelected ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                    ${usePhotoBg ? 'group' : ''}
                   `}
                   title={hasLogs ? `${dayLogs.length} workout(s), ${totalMins} min` : dateStr}
                 >
-                  <span className={`text-sm font-black leading-none ${isSelected ? '' : isToday ? 'text-indigo-600' : ''}`}>
+                  {usePhotoBg && (
+                    <>
+                      <img
+                        src={cellPhoto}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10" />
+                    </>
+                  )}
+                  <span className={`relative z-10 text-sm font-black leading-none ${dayColor}`}>
                     {day}
                   </span>
                   {hasLogs && (
-                    <span
-                      className={`text-[8px] font-black leading-none ${
-                        isSelected ? 'text-white/90' : accentLight
-                      }`}
-                    >
+                    <span className={`relative z-10 text-[8px] font-black leading-none ${badgeColor}`}>
                       {totalMins}m
                     </span>
                   )}
