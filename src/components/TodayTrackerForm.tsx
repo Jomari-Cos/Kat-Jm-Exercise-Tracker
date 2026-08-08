@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { UserProfile, UserStats, UserType, ExerciseCategory, WorkoutLog } from '../types';
 import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon, AlertCircle, Footprints, Route, Timer, X } from 'lucide-react';
 import { getTodayDateStr } from '../utils/storage';
@@ -65,20 +65,22 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [showAddAnother, setShowAddAnother] = useState<boolean>(false);
   const [session, setSession] = useState<StepSession | null>(null);
 
-  // Auto-fill the form from an automatically tracked session (steps/time/distance).
+  // When true, the next captured proof photo immediately logs the tracked session.
+  const autoLogAfterPhotoRef = useRef(false);
+
+  // Auto-fill the form from an automatically tracked session (steps/time/distance),
+  // then immediately ask for a proof photo — logging happens automatically after capture.
   const handleSessionFinish = (s: StepSession) => {
     setSession(s);
     const mins = activeSecondsToMins(s.activeSeconds);
     if (mins > 0) setDurationMins(mins);
+    autoLogAfterPhotoRef.current = true;
+    setIsCameraOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-    if (durationMins <= 0) return;
-
-    // Require a proof photo before a session can be logged
-    if (!proofPhoto) return;
-
+  // Submit a log entry with an explicitly provided proof photo. Used both by the
+  // regular "LOG SESSION" button and by the automatic session flow (photo -> log).
+  const performLog = async (photo: string) => {
     setIsSubmitting(true);
 
     let feedback = '';
@@ -93,7 +95,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           notes,
           steps: session?.steps,
           distanceMeters: session?.distanceMeters,
-          imageBase64: proofPhoto
+          imageBase64: photo
         })
       });
       const data = await resp.json();
@@ -117,7 +119,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       startTime: session?.startTime,
       endTime: session?.endTime,
       mood,
-      proofPhotoUrl: proofPhoto || undefined,
+      proofPhotoUrl: photo,
       aiFeedback: feedback || undefined
     };
 
@@ -127,6 +129,16 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
     setProofPhoto(null);
     setSession(null);
     setNotes('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (durationMins <= 0) return;
+
+    // Require a proof photo before a session can be logged
+    if (!proofPhoto) return;
+
+    await performLog(proofPhoto);
   };
 
   return (
@@ -239,29 +251,50 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
         <form onSubmit={handleSubmit} className={`bg-white rounded-[32px] p-6 sm:p-8 border-2 ${cardBorder} shadow-xl shadow-slate-200/50 space-y-8`}>
           {/* Tracked session summary (auto-filled from the Live Activity Tracker) */}
           {session && (
-            <div className={`rounded-3xl border ${lightBg} px-4 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2`}>
-              <span className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 ${primaryText}`}>
-                <Footprints className="w-4 h-4" /> Tracked Session
-              </span>
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Footprints className="w-4 h-4 text-teal-600" /> {session.steps.toLocaleString()} steps
-              </span>
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Route className="w-4 h-4 text-indigo-500" /> {formatDistance(session.distanceMeters)}
-              </span>
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Timer className="w-4 h-4 text-amber-500" /> {formatClockTime(session.startTime)} → {formatClockTime(session.endTime)}
-              </span>
-              <span className="text-xs font-bold text-slate-700">
-                ⏱ {formatElapsed(session.activeSeconds * 1000)} · auto-filled {activeSecondsToMins(session.activeSeconds)} min
-              </span>
-              <button
-                type="button"
-                onClick={() => setSession(null)}
-                className="ml-auto text-[11px] font-black text-rose-500 hover:underline flex items-center gap-1"
-              >
-                <X className="w-3.5 h-3.5" /> Clear
-              </button>
+            <div className={`rounded-3xl border ${lightBg} px-4 py-4 space-y-3`}>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 ${primaryText}`}>
+                  <Footprints className="w-4 h-4" /> Tracked Session
+                </span>
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Footprints className="w-4 h-4 text-teal-600" /> {session.steps.toLocaleString()} steps
+                </span>
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Route className="w-4 h-4 text-indigo-500" /> {formatDistance(session.distanceMeters)}
+                </span>
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Timer className="w-4 h-4 text-amber-500" /> {formatClockTime(session.startTime)} → {formatClockTime(session.endTime)}
+                </span>
+                <span className="text-xs font-bold text-slate-700">
+                  ⏱ {formatElapsed(session.activeSeconds * 1000)} · {activeSecondsToMins(session.activeSeconds)} min
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-3">
+                <p className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  A photo proof is required — the session logs automatically once it's captured.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      autoLogAfterPhotoRef.current = true;
+                      setIsCameraOpen(true);
+                    }}
+                    className={`${primaryBg} text-white text-[11px] font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm`}
+                  >
+                    <Camera className="w-3.5 h-3.5" /> Add Proof & Log
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSession(null)}
+                    className="text-[11px] font-black text-slate-400 hover:text-rose-500 flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" /> Clear
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -463,11 +496,22 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
         </form>
       )}
 
-      {/* Camera Capture Modal */}
+      {/* Camera Capture Modal — used both manually and by the automatic session flow */}
       <CameraCaptureModal
         isOpen={isCameraOpen}
-        onClose={() => setIsCameraOpen(false)}
-        onCapture={(photo) => setProofPhoto(photo)}
+        onClose={() => {
+          // If the user dismisses the prompt, they can still add a photo manually.
+          autoLogAfterPhotoRef.current = false;
+          setIsCameraOpen(false);
+        }}
+        onCapture={(photo) => {
+          setProofPhoto(photo);
+          if (autoLogAfterPhotoRef.current) {
+            // Automatic session flow: capture the proof -> log right away.
+            autoLogAfterPhotoRef.current = false;
+            performLog(photo);
+          }
+        }}
       />
     </div>
   );
