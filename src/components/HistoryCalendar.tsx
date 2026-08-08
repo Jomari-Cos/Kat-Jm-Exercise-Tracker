@@ -201,16 +201,15 @@ export const HistoryCalendar: React.FC<HistoryCalendarProps> = ({
                   key={dateStr}
                   onClick={() => setSelectedDate(dateStr)}
                   className={`relative aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center gap-0.5 transition
-                    ${
-                      isSelected
-                        ? `${accentBg} text-white shadow-md`
-                        : usePhotoBg
-                          ? 'text-white'
-                          : hasLogs
-                            ? isJm
-                              ? 'bg-emerald-50 hover:bg-emerald-100 text-slate-800'
-                              : 'bg-pink-50 hover:bg-pink-100 text-slate-800'
-                            : 'text-slate-400 hover:bg-slate-100'
+                    ${isSelected
+                      ? `${accentBg} text-white shadow-md`
+                      : usePhotoBg
+                        ? 'text-white'
+                        : hasLogs
+                          ? isJm
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-slate-800'
+                            : 'bg-pink-50 hover:bg-pink-100 text-slate-800'
+                          : 'text-slate-400 hover:bg-slate-100'
                     }
                     ${isToday && !isSelected ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
                     ${usePhotoBg ? 'group' : ''}
@@ -251,7 +250,7 @@ export const HistoryCalendar: React.FC<HistoryCalendarProps> = ({
           </span>
         </div>
       </div>
-{/* Day Detail Modal */}
+      {/* Day Detail Modal */}
       {selectedDate && (
         <div
           onClick={() => setSelectedDate(null)}

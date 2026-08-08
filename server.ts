@@ -45,7 +45,7 @@ async function startServer() {
         });
       }
 
-      const { user, exerciseType, durationMins, notes, imageBase64 } = req.body;
+      const { user, exerciseType, durationMins, notes, steps, distanceMeters, imageBase64 } = req.body;
 
       const ai = new GoogleGenAI({ apiKey });
       
@@ -54,7 +54,7 @@ async function startServer() {
       let promptText = `Provide a fun, highly energetic, and personalized workout congratulatory message for ${user || 'the user'}.
       Workout details:
       - Type: ${exerciseType || 'Exercise'}
-      - Duration: ${durationMins || 30} minutes
+      - Duration: ${durationMins || 30} minutes${steps ? `\n      - Steps: ${steps} steps` : ''}${distanceMeters ? `\n      - Distance: ${distanceMeters} meters` : ''}
       - User notes: ${notes || 'No extra notes'}
       
       Keep it under 3 concise sentences. Include 1 fun fitness tip or positive streak encouragement. Be super supportive!`;

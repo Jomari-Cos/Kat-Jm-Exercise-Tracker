@@ -32,6 +32,11 @@ Represents an individual workout entry submitted by either `JM` or `KAT`.
 | `customName` | `string` | No | Optional custom exercise label or workout name |
 | `durationMins` | `number` | Yes | Total workout duration in minutes (positive integer) |
 | `caloriesBurned` | `number` | No | Estimated calories burned |
+| `steps` | `number` | No | Total steps automatically counted from the device motion sensor |
+| `distanceMeters` | `number` | No | Distance traveled in meters (GPS when allowed, otherwise estimated from steps × stride) |
+| `startTime` | `number` | No | Unix epoch ms when the activity started (auto-tracked) |
+| `endTime` | `number` | No | Unix epoch ms when the activity ended (auto-tracked) |
+
 | `notes` | `string` | No | Personal notes, performance stats, PRs, or description |
 | `proofPhotoUrl` | `string` | No | Base64 data URL or photo link attached as workout proof |
 | `aiFeedback` | `string` | No | AI-generated motivational cheer or feedback message |
