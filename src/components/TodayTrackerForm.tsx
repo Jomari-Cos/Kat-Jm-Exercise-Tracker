@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { UserProfile, UserStats, UserType, ExerciseCategory, WorkoutLog } from '../types';
-import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon, AlertCircle, Footprints, Route, Timer, X } from 'lucide-react';
 import { getTodayDateStr } from '../utils/storage';
 import { CameraCaptureModal } from './CameraCaptureModal';
+import { ActivitySessionTracker, StepSession } from './ActivitySessionTracker';
+import { activeSecondsToMins, formatElapsed, formatDistance, formatClockTime } from '../lib/trackerUtils';
 
 interface TodayTrackerFormProps {
   user: UserType;
@@ -61,6 +63,14 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showAddAnother, setShowAddAnother] = useState<boolean>(false);
+  const [session, setSession] = useState<StepSession | null>(null);
+
+  // Auto-fill the form from an automatically tracked session (steps/time/distance).
+  const handleSessionFinish = (s: StepSession) => {
+    setSession(s);
+    const mins = activeSecondsToMins(s.activeSeconds);
+    if (mins > 0) setDurationMins(mins);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -81,6 +91,8 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           exerciseType: category,
           durationMins,
           notes,
+          steps: session?.steps,
+          distanceMeters: session?.distanceMeters,
           imageBase64: proofPhoto
         })
       });
@@ -100,6 +112,10 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       durationMins,
       notes: notes.trim(),
       location: location.trim(),
+      steps: session?.steps,
+      distanceMeters: session?.distanceMeters,
+      startTime: session?.startTime,
+      endTime: session?.endTime,
       mood,
       proofPhotoUrl: proofPhoto || undefined,
       aiFeedback: feedback || undefined
@@ -109,6 +125,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
     setIsSubmitting(false);
     setShowAddAnother(false);
     setProofPhoto(null);
+    setSession(null);
     setNotes('');
   };
 
@@ -132,6 +149,9 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Automatic live tracker (steps / active time / start-end / distance) */}
+      <ActivitySessionTracker isJm={isJm} onSessionFinish={handleSessionFinish} />
 
       {/* Main Container Card */}
       {stats.loggedToday && stats.todayLog && !showAddAnother ? (
@@ -217,6 +237,34 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
         </div>
       ) : (
         <form onSubmit={handleSubmit} className={`bg-white rounded-[32px] p-6 sm:p-8 border-2 ${cardBorder} shadow-xl shadow-slate-200/50 space-y-8`}>
+          {/* Tracked session summary (auto-filled from the Live Activity Tracker) */}
+          {session && (
+            <div className={`rounded-3xl border ${lightBg} px-4 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2`}>
+              <span className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 ${primaryText}`}>
+                <Footprints className="w-4 h-4" /> Tracked Session
+              </span>
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Footprints className="w-4 h-4 text-teal-600" /> {session.steps.toLocaleString()} steps
+              </span>
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Route className="w-4 h-4 text-indigo-500" /> {formatDistance(session.distanceMeters)}
+              </span>
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Timer className="w-4 h-4 text-amber-500" /> {formatClockTime(session.startTime)} → {formatClockTime(session.endTime)}
+              </span>
+              <span className="text-xs font-bold text-slate-700">
+                ⏱ {formatElapsed(session.activeSeconds * 1000)} · auto-filled {activeSecondsToMins(session.activeSeconds)} min
+              </span>
+              <button
+                type="button"
+                onClick={() => setSession(null)}
+                className="ml-auto text-[11px] font-black text-rose-500 hover:underline flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" /> Clear
+              </button>
+            </div>
+          )}
+
           {/* Minutes Input Section */}
           <div>
             <div className="flex items-center justify-between mb-3">

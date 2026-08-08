@@ -89,6 +89,10 @@ interface WorkoutLogRow {
   ai_feedback: string | null;
   mood: string | null;
   location: string | null;
+  steps: number | null;
+  distance_meters: number | null;
+  start_time: number | null;
+  end_time: number | null;
 }
 
 const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
@@ -105,6 +109,10 @@ const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
   aiFeedback: row.ai_feedback ?? undefined,
   mood: row.mood ?? undefined,
   location: row.location ?? undefined,
+  steps: row.steps ?? undefined,
+  distanceMeters: row.distance_meters ?? undefined,
+  startTime: row.start_time ?? undefined,
+  endTime: row.end_time ?? undefined,
 });
 
 const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => ({
@@ -121,6 +129,10 @@ const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date:
   ai_feedback: log.aiFeedback ?? null,
   mood: log.mood ?? null,
   location: log.location ?? null,
+  steps: log.steps ?? null,
+  distance_meters: log.distanceMeters ?? null,
+  start_time: log.startTime ?? null,
+  end_time: log.endTime ?? null,
 });
 
 interface UserProfileRow {

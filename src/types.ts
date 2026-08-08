@@ -27,6 +27,11 @@ export interface WorkoutLog {
   aiFeedback?: string;
   mood?: string; // e.g. '🔥 On Fire', '💪 Strong', '💦 Sweaty', '🧘 Calm'
   location?: string;
+  // Automatically tracked session metrics (steps + time + distance)
+  steps?: number; // total steps counted from the device motion sensor
+  distanceMeters?: number; // distance traveled (GPS when allowed, else steps × stride)
+  startTime?: number; // Unix epoch ms when the activity started
+  endTime?: number; // Unix epoch ms when the activity ended
 }
 
 export interface UserProfile {

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { UserProfile, WorkoutLog } from '../types';
 import { formatDatePretty } from '../utils/storage';
-import { Camera, Trash2, Sparkles, CheckCircle2, MapPin, Eye } from 'lucide-react';
+import { formatDistance, formatClockTime } from '../lib/trackerUtils';
+import { Camera, Trash2, Sparkles, CheckCircle2, MapPin, Eye, Footprints, Route, Timer } from 'lucide-react';
 
 interface WorkoutLogCardProps {
   log: WorkoutLog;
@@ -112,6 +113,27 @@ export const WorkoutLogCard: React.FC<WorkoutLogCardProps> = ({ log, profiles, o
                 </span>
               )}
             </div>
+
+            {/* Auto-tracked metrics (steps / distance / start-end time) */}
+            {(log.steps !== undefined || log.distanceMeters !== undefined || (log.startTime && log.endTime)) && (
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {log.steps !== undefined && log.steps > 0 && (
+                  <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                    <Footprints className="w-3 h-3 text-teal-600" /> {log.steps.toLocaleString()} steps
+                  </span>
+                )}
+                {log.distanceMeters !== undefined && log.distanceMeters > 0 && (
+                  <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                    <Route className="w-3 h-3 text-indigo-400" /> {formatDistance(log.distanceMeters)}
+                  </span>
+                )}
+                {log.startTime && log.endTime && (
+                  <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                    <Timer className="w-3 h-3 text-amber-500" /> {formatClockTime(log.startTime)} → {formatClockTime(log.endTime)}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* AI Feedback */}
             {log.aiFeedback && (
