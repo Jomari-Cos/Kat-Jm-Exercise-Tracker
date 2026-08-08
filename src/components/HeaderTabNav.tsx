@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile, UserStats, UserType } from '../types';
-import { Flame, Activity, RefreshCw, Settings2, Cloud, CloudOff } from 'lucide-react';
+import { Flame, RefreshCw, Settings2, Cloud, CloudOff } from 'lucide-react';
 import { UserProfileModal } from './UserProfileModal';
 import type { SyncStatus } from '../utils/storage';
 
@@ -39,14 +39,11 @@ export const HeaderTabNav: React.FC<HeaderTabNavProps> = ({
     <header className="px-4 sm:px-8 py-4 bg-white border-b-2 border-pink-100/80 flex flex-col md:flex-row items-center justify-between gap-4 sticky top-0 z-40 shadow-xs">
       {/* Brand logo & title - Pink & Green theme */}
       <div className="flex items-center gap-3">
-        <div className="flex -space-x-2">
-          <div className="w-10 h-10 bg-pink-500 rounded-2xl flex items-center justify-center text-white font-black shadow-md shadow-pink-200 border-2 border-white z-10">
-            <Activity className="w-6 h-6" />
-          </div>
-          <div className="w-10 h-10 bg-emerald-500 rounded-2xl flex items-center justify-center text-white font-black shadow-md shadow-emerald-200 border-2 border-white">
-            <Activity className="w-6 h-6" />
-          </div>
-        </div>
+        <img
+          src="/logo.jpg"
+          alt="Kat & Jm logo"
+          className="h-11 w-11 rounded-2xl object-cover border-2 border-white shadow-md shadow-slate-200"
+        />
         <div>
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 uppercase flex items-center gap-2">
             <span className="text-pink-600">KAT</span> & <span className="text-emerald-600">JM</span>
