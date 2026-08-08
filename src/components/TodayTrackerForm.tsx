@@ -65,17 +65,19 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [showAddAnother, setShowAddAnother] = useState<boolean>(false);
   const [session, setSession] = useState<StepSession | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [highlightDetails, setHighlightDetails] = useState(false);
+  const extraDetailsRef = useRef<HTMLDivElement | null>(null);
 
-  // When true, the next captured proof photo immediately logs the tracked session.
-  const autoLogAfterPhotoRef = useRef(false);
-
-  // Auto-fill the form from an automatically tracked session (steps/time/distance),
-  // then immediately ask for a proof photo — logging happens automatically after capture.
+  // Auto-fill the form from an automatically tracked session. The exercise type
+  // becomes Walking, the logging form is revealed, and a proof photo is asked for.
+  // After the photo, extra details are prompted before the user presses LOG SESSION.
   const handleSessionFinish = (s: StepSession) => {
     setSession(s);
+    setSubmitError(null);
     const mins = activeSecondsToMins(s.activeSeconds);
     if (mins > 0) setDurationMins(mins);
-    autoLogAfterPhotoRef.current = true;
+    setCategory('Walking');
+    setShowAddAnother(true);
     setIsCameraOpen(true);
   };
 
@@ -288,22 +290,22 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-3">
                 <p className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
                   <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                  A photo proof is required — the session logs automatically once it's captured.
+                  Add a photo proof, then extra details, then press LOG SESSION to finish.
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      autoLogAfterPhotoRef.current = true;
-                      setIsCameraOpen(true);
-                    }}
+                    onClick={() => setIsCameraOpen(true)}
                     className={`${primaryBg} text-white text-[11px] font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm`}
                   >
-                    <Camera className="w-3.5 h-3.5" /> Add Proof & Log
+                    <Camera className="w-3.5 h-3.5" /> Add Proof Photo
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSession(null)}
+                    onClick={() => {
+                      setSession(null);
+                      setHighlightDetails(false);
+                    }}
                     className="text-[11px] font-black text-slate-400 hover:text-rose-500 flex items-center gap-1"
                   >
                     <X className="w-3.5 h-3.5" /> Clear
@@ -446,10 +448,24 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           )}
 
           {/* Additional details */}
-          <div className="space-y-3 pt-2 border-t border-slate-100">
+          <div
+            ref={extraDetailsRef}
+            className={`space-y-3 pt-2 border-t transition-all duration-500 ${
+              highlightDetails
+                ? 'bg-slate-50 border-slate-200 rounded-3xl p-4 shadow-inner ring-2 ring-amber-300'
+                : 'border-slate-100'
+            }`}
+          >
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">
               Extra Details (Optional)
             </label>
+            {highlightDetails && (
+              <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                <Smile className="w-4 h-4 shrink-0 mt-0.5" />
+                Almost done! Your session and proof photo are ready. Add any extra details below, then press
+                <b> LOG SESSION </b> to finish.
+              </p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 type="text"
@@ -503,9 +519,11 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
 
           {/* Submit button */}
           <button
-                        type="submit"
+            type="submit"
             disabled={isSubmitting || durationMins <= 0 || !proofPhoto}
-            className={`w-full ${primaryBg} text-white text-lg sm:text-xl font-black py-5 rounded-3xl shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed`}
+            className={`w-full ${primaryBg} text-white text-lg sm:text-xl font-black py-5 rounded-3xl shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+              highlightDetails ? 'ring-4 ring-amber-200' : ''
+            }`}
           >
             {!proofPhoto ? (
               <span>ADD PROOF TO LOG</span>
@@ -521,17 +539,16 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       {/* Camera Capture Modal — used both manually and by the automatic session flow */}
       <CameraCaptureModal
         isOpen={isCameraOpen}
-        onClose={() => {
-          // If the user dismisses the prompt, they can still add a photo manually.
-          autoLogAfterPhotoRef.current = false;
-          setIsCameraOpen(false);
-        }}
+        onClose={() => setIsCameraOpen(false)}
         onCapture={(photo) => {
           setProofPhoto(photo);
-          if (autoLogAfterPhotoRef.current) {
-            // Automatic session flow: capture the proof -> log right away.
-            autoLogAfterPhotoRef.current = false;
-            performLog(photo);
+          if (session) {
+            // Tracked session: after capturing the proof, guide the user to the
+            // "Extra Details" section — logging finishes via the LOG SESSION button.
+            setHighlightDetails(true);
+            requestAnimationFrame(() => {
+              extraDetailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
           }
         }}
       />
