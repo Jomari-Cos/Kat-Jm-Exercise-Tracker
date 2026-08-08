@@ -17,7 +17,6 @@ import { TodayTrackerForm } from './components/TodayTrackerForm';
 import { HistoryCalendar } from './components/HistoryCalendar';
 import { UserStatsSummary } from './components/UserStatsSummary';
 import { ProfileGoalCard } from './components/ProfileGoalCard';
-import { Activity } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<UserType | 'BOTH'>('KAT');
@@ -83,14 +82,11 @@ export default function App() {
   if (isLoading || !profiles || !statsJM || !statsKAT) {
     return (
       <div className="min-h-screen bg-slate-50/70 font-sans text-slate-900 flex flex-col items-center justify-center gap-4">
-        <div className="flex -space-x-2">
-          <div className="w-12 h-12 bg-pink-500 rounded-2xl flex items-center justify-center text-white font-black shadow-md shadow-pink-200 border-2 border-white z-10">
-            <Activity className="w-6 h-6" />
-          </div>
-          <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white font-black shadow-md shadow-emerald-200 border-2 border-white">
-            <Activity className="w-6 h-6" />
-          </div>
-        </div>
+        <img
+          src="/logo.jpg"
+          alt="Kat & Jm logo"
+          className="h-16 w-16 rounded-3xl object-cover border-2 border-white shadow-xl shadow-slate-200"
+        />
         <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">
           Loading workout data...
         </p>
