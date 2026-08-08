@@ -14,7 +14,7 @@ import {
 } from './utils/storage';
 import { HeaderTabNav } from './components/HeaderTabNav';
 import { TodayTrackerForm } from './components/TodayTrackerForm';
-import { HistoryList } from './components/HistoryList';
+import { HistoryCalendar } from './components/HistoryCalendar';
 import { UserStatsSummary } from './components/UserStatsSummary';
 import { ProfileGoalCard } from './components/ProfileGoalCard';
 import { Activity } from 'lucide-react';
@@ -174,7 +174,7 @@ export default function App() {
                   stats={statsKAT}
                   onLogSubmit={handleLogSubmit}
                 />
-                <HistoryList
+                <HistoryCalendar
                   user="KAT"
                   profiles={profiles}
                   logs={allLogs.filter(l => l.user === 'KAT')}
@@ -200,7 +200,7 @@ export default function App() {
                   stats={statsJM}
                   onLogSubmit={handleLogSubmit}
                 />
-                <HistoryList
+                <HistoryCalendar
                   user="JM"
                   profiles={profiles}
                   logs={allLogs.filter(l => l.user === 'JM')}
@@ -239,7 +239,7 @@ export default function App() {
                 stats={activeTab === 'JM' ? statsJM : statsKAT}
               />
 
-              <HistoryList
+              <HistoryCalendar
                 user={activeTab}
                 profiles={profiles}
                 logs={allLogs.filter(l => l.user === activeTab)}
