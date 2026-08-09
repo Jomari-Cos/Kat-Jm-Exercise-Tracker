@@ -81,6 +81,10 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
     setIsCameraOpen(true);
   };
 
+  const handleSessionMapSaved = (url: string) => {
+    setSession((prev) => (prev ? { ...prev, mapProofUrl: url } : prev));
+  };
+
   // Submit a log entry with an explicitly provided proof photo. Used both by the
   // regular "LOG SESSION" button and by the automatic session flow (photo -> log).
   const performLog = async (photo: string) => {
@@ -128,6 +132,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       startTime: session?.startTime,
       endTime: session?.endTime,
       route: session?.route,
+      mapProofUrl: session?.mapProofUrl,
       mood,
       proofPhotoUrl: photo,
       aiFeedback: feedback || undefined
@@ -181,7 +186,11 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       </div>
 
       {/* Automatic live tracker (steps / active time / start-end / distance) */}
-      <ActivitySessionTracker isJm={isJm} onSessionFinish={handleSessionFinish} />
+      <ActivitySessionTracker
+        isJm={isJm}
+        onSessionFinish={handleSessionFinish}
+        onMapProofSaved={handleSessionMapSaved}
+      />
 
       {/* Main Container Card */}
       {stats.loggedToday && stats.todayLog && !showAddAnother ? (
@@ -395,7 +404,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className={`block text-xs sm:text-sm font-black uppercase tracking-widest ${primaryText}`}>
-                Proof of Exercise <span className="text-rose-500">(Required)</span>
+                Proof of Exercise <span className="text-rose-500">(Photo Required)</span>
               </label>
               {proofPhoto && (
                 <button
@@ -408,45 +417,68 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
               )}
             </div>
 
-            {proofPhoto ? (
-              <div className="relative h-48 w-full rounded-3xl overflow-hidden border-4 border-slate-200 bg-slate-900 group shadow-md">
-                <img
-                  src={proofPhoto}
-                  alt="Proof preview"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsCameraOpen(true)}
-                    className="px-4 py-2 bg-white text-slate-900 rounded-2xl font-black text-xs shadow-lg"
-                  >
-                    Retake Photo 📸
-                  </button>
+            <div className={proofPhoto && session?.mapProofUrl ? 'grid grid-cols-1 sm:grid-cols-2 gap-3' : 'space-y-3'}>
+              {proofPhoto ? (
+                <div className="relative h-48 rounded-3xl overflow-hidden border-4 border-slate-200 bg-slate-900 group shadow-md">
+                  <img
+                    src={proofPhoto}
+                    alt="Proof preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsCameraOpen(true)}
+                      className="px-4 py-2 bg-white text-slate-900 rounded-2xl font-black text-xs shadow-lg"
+                    >
+                      Retake Photo 📸
+                    </button>
+                  </div>
+                  <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg">
+                    📷 Photo
+                  </span>
                 </div>
-              </div>
-            ) : (
-              <div
-                onClick={() => setIsCameraOpen(true)}
-                className={`h-44 w-full border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center bg-slate-50 hover:bg-white transition-all cursor-pointer group p-4 border-slate-200 hover:${cardBorder}`}
-              >
-                <div className={`w-14 h-14 ${isJm ? 'bg-emerald-100 text-emerald-600' : 'bg-pink-100 text-pink-600'} rounded-2xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform mb-3`}>
-                  <Camera className="h-7 w-7" />
+              ) : (
+                <div
+                  onClick={() => setIsCameraOpen(true)}
+                  className={`h-44 w-full border-4 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center bg-slate-50 hover:bg-white transition-all cursor-pointer group p-4 border-slate-200 hover:${cardBorder}`}
+                >
+                  <div className={`w-14 h-14 ${isJm ? 'bg-emerald-100 text-emerald-600' : 'bg-pink-100 text-pink-600'} rounded-2xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform mb-3`}>
+                    <Camera className="h-7 w-7" />
+                  </div>
+                  <p className="text-slate-800 font-black text-sm">Take Photo / Upload Proof</p>
+                  <p className="text-xs font-medium text-slate-400 mt-0.5">
+                    Smart watch, gym selfie, or shoes
+                  </p>
                 </div>
-                <p className="text-slate-800 font-black text-sm">Take Photo / Upload Proof</p>
-                <p className="text-xs font-medium text-slate-400 mt-0.5">
-                  Smart watch, gym selfie, or shoes
-                </p>
-              </div>
-                        )}
-          </div>
+              )}
 
-          {!proofPhoto && (
-            <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 mt-1">
-              <AlertCircle className="w-4 h-4" />
-              A photo proof is required to log a session
-            </p>
-          )}
+              {session?.mapProofUrl ? (
+                <div className="relative h-48 rounded-3xl overflow-hidden border-4 border-indigo-200 bg-slate-900 group shadow-md">
+                  <img
+                    src={session.mapProofUrl}
+                    alt="Route map proof"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute top-2 left-2 bg-indigo-600/80 text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg">
+                    🗺️ Map
+                  </span>
+                </div>
+              ) : (
+                <p className="h-40 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-[11px] font-bold text-slate-400 px-4 text-center">
+                  <MapPin className="w-5 h-5" />
+                  No map screenshot yet — use <b>Save Map</b> in the Live Activity Tracker above
+                </p>
+              )}
+            </div>
+
+            {!proofPhoto && (
+              <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 mt-2">
+                <AlertCircle className="w-4 h-4" />
+                A photo proof is required to log a session
+              </p>
+            )}
+          </div>
 
           {/* Additional details */}
           <div

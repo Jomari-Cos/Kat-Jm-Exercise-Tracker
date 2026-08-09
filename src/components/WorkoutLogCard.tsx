@@ -33,24 +33,39 @@ export const WorkoutLogCard: React.FC<WorkoutLogCardProps> = ({ log, profiles, o
     <>
       <div className="bg-white p-5 rounded-3xl border-2 border-indigo-50/80 hover:border-indigo-100 shadow-xs hover:shadow-md transition-all group">
         <div className="flex items-start gap-4">
-          {/* Proof Photo Thumbnail */}
-          <div
-            onClick={() => log.proofPhotoUrl && setSelectedPhoto(log.proofPhotoUrl)}
-            className={`w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 relative border ${
-              log.proofPhotoUrl ? 'cursor-pointer hover:opacity-90' : 'bg-slate-100'
-            }`}
-          >
-            {log.proofPhotoUrl ? (
-              <>
-                <img src={log.proofPhotoUrl} alt="Proof" className="w-full h-full object-cover" />
+          {/* Proof thumbnails: photo + optional route map */}
+          <div className="flex flex-col gap-2 flex-shrink-0">
+            <div
+              onClick={() => log.proofPhotoUrl && setSelectedPhoto(log.proofPhotoUrl)}
+              className={`w-20 h-20 rounded-2xl overflow-hidden relative border ${
+                log.proofPhotoUrl ? 'cursor-pointer hover:opacity-90' : 'bg-slate-100'
+              }`}
+            >
+              {log.proofPhotoUrl ? (
+                <>
+                  <img src={log.proofPhotoUrl} alt="Proof" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                    <Eye className="w-5 h-5" />
+                  </div>
+                </>
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex flex-col items-center justify-center text-indigo-400 p-1">
+                  <Camera className="w-6 h-6 stroke-1.5" />
+                  <span className="text-[9px] font-bold mt-0.5">No Proof</span>
+                </div>
+              )}
+            </div>
+
+            {log.mapProofUrl && (
+              <div
+                onClick={() => log.mapProofUrl ? setSelectedPhoto(log.mapProofUrl) : undefined}
+                className="w-20 h-20 rounded-2xl overflow-hidden relative border border-indigo-200 cursor-pointer hover:opacity-90"
+                title="View route map proof"
+              >
+                <img src={log.mapProofUrl} alt="Route map proof" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
                   <Eye className="w-5 h-5" />
                 </div>
-              </>
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex flex-col items-center justify-center text-indigo-400 p-1">
-                <Camera className="w-6 h-6 stroke-1.5" />
-                <span className="text-[9px] font-bold mt-0.5">No Proof</span>
               </div>
             )}
           </div>

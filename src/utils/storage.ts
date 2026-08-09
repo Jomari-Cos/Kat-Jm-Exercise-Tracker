@@ -94,6 +94,7 @@ interface WorkoutLogRow {
   start_time: number | null;
   end_time: number | null;
   route: LatLng[] | null;
+  map_proof_url: string | null;
 }
 
 /** Normalize the `route` column (JSONB array or JSON-encoded text) into LatLng[]. */
@@ -136,6 +137,7 @@ const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
   startTime: row.start_time ?? undefined,
   endTime: row.end_time ?? undefined,
   route: parseRoute(row.route),
+  mapProofUrl: row.map_proof_url ?? undefined,
 });
 
 const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => {
@@ -162,6 +164,7 @@ const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date:
   if (log.startTime !== undefined) row.start_time = log.startTime;
   if (log.endTime !== undefined) row.end_time = log.endTime;
   if (log.route && log.route.length > 0) row.route = log.route;
+  if (log.mapProofUrl) row.map_proof_url = log.mapProofUrl;
 
   return row as Omit<WorkoutLogRow, 'date'> & { date: string };
 };
@@ -269,7 +272,7 @@ const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
   return (data ?? []).map(rowToWorkoutLog);
 };
 
-const TRACKING_COLUMNS = ['steps', 'distance_meters', 'start_time', 'end_time', 'route'];
+const TRACKING_COLUMNS = ['steps', 'distance_meters', 'start_time', 'end_time', 'route', 'map_proof_url'];
 
 /**
  * Insert workout log row(s) into Supabase, gracefully retrying without the
