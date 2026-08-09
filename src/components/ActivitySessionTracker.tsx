@@ -21,7 +21,14 @@ import {
   formatClockTime,
   LatLng
 } from '../lib/trackerUtils';
-import { RouteMap } from './RouteMap';
+import { RouteMap, RouteMapHandle } from './RouteMap';
+import { UserType } from '../types';
+import {
+  clearPersistedSession,
+  loadPersistedSession,
+  persistSession,
+  type PersistedSession
+} from '../utils/sessionPersistence';
 
 /** Result of one automatically tracked activity session. */
 export interface StepSession {
@@ -39,6 +46,8 @@ interface ActivitySessionTrackerProps {
   isJm: boolean;
   onSessionFinish: (session: StepSession) => void;
   onMapProofSaved?: (dataUrl: string) => void;
+  /** Called when the tracked session is discarded or reset (form should clear its summary). */
+  onSessionReset?: () => void;
 }
 
 type TrackerStatus = 'idle' | 'running' | 'paused' | 'finished';
@@ -56,8 +65,10 @@ const SIM_STEPS_PER_SECOND = 2; // walking pace used by Simulate mode (~120 step
 export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   isJm,
   onSessionFinish,
-  onMapProofSaved
+  onMapProofSaved,
+  onSessionReset
 }) => {
+  const user: UserType = isJm ? 'JM' : 'KAT';
   // Display state
   const [status, setStatus] = useState<TrackerStatus>('idle');
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -86,6 +97,8 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   const displayTimerRef = useRef<number | null>(null);
   const simTimerRef = useRef<number | null>(null);
   const routeRef = useRef<LatLng[]>([]); // recorded GPS trace (capped)
+  const mapProofRef = useRef<string | null>(null); // latest map proof data URL
+  const routeMapRef = useRef<RouteMapHandle | null>(null);
 
   const isRunning = () => statusRef.current === 'running';
 
@@ -103,6 +116,27 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setDistanceSource(gpsModeRef.current ? 'gps' : 'estimated');
     setRoutePoints(routeRef.current.slice());
   }, []);
+
+  /** Serializable checkpoint of the current session state (used for localStorage). */
+  const buildSnapshot = (
+    status: PersistedSession['status'],
+    activeMs: number,
+    endTime?: number
+  ): PersistedSession => ({
+    user,
+    status,
+    steps: stepCounterRef.current.steps,
+    distanceMeters: Math.round(getDistance(stepCounterRef.current.steps)),
+    distanceSource: gpsModeRef.current ? 'gps' : 'estimated',
+    gpsMode: gpsModeRef.current,
+    startTime: startedAtRef.current,
+    endTime,
+    activeMs,
+    savedAt: Date.now(),
+    route: routeRef.current.slice(),
+    mapProof: mapProofRef.current || undefined,
+    simulate
+  });
 
   const stopTimers = useCallback(() => {
     if (displayTimerRef.current !== null) {
@@ -158,8 +192,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setSimulate(false);
   }, []);
 
-  const handleStart = async () => {
-    setError(null);
+  const attachTracking = async (): Promise<boolean> => {
     const hasMotionApi = typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
     setSensorSupported(hasMotionApi);
 
@@ -184,32 +217,18 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       setError(
         'No motion sensor on this device. Step counting needs a phone over HTTPS — enable Simulate mode to test the flow.'
       );
-      return;
+      return false;
     }
 
-    stepCounterRef.current.reset();
-    activeBaseRef.current = 0;
-    runStartRef.current = performance.now();
-    startedAtRef.current = Date.now();
-    gpsModeRef.current = false;
-    gpsDistanceRef.current = 0;
-    lastPosRef.current = null;
-    routeRef.current = [];
-
-    // Seed a starting point in Simulate mode so the map has a pin to draw from.
-    if (simulate) {
-      routeRef.current.push({ latitude: 14.599512, longitude: 120.984222 });
-    }
-
-    // Real accelerometer listener.
-    if (hasMotionApi && !simulate) {
+    // Real accelerometer listener (idempotent — never double-register).
+    if (hasMotionApi && !simulate && !motionHandlerRef.current) {
       const handler = (e: DeviceMotionEvent) => stepCounterRef.current.handleMotion(e);
       motionHandlerRef.current = handler;
       window.addEventListener('devicemotion', handler);
     }
 
     // Optional GPS path tracking (hybrid distance: GPS when allowed, else estimate).
-    if (typeof navigator !== 'undefined' && navigator.geolocation && !simulate) {
+    if (typeof navigator !== 'undefined' && navigator.geolocation && !simulate && watchIdRef.current === null) {
       setGpsSupported(true);
       try {
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -245,7 +264,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     }
 
     // Simulated steps for desktop / dev testing.
-    if (simulate) {
+    if (simulate && simTimerRef.current === null) {
       simTimerRef.current = window.setInterval(() => {
         if (statusRef.current === 'running') {
           stepCounterRef.current.addSteps(SIM_STEPS_PER_SECOND);
@@ -259,11 +278,41 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       }, 1000);
     }
 
-    displayTimerRef.current = window.setInterval(syncDisplay, 250);
+    // Display clock.
+    if (displayTimerRef.current === null) {
+      displayTimerRef.current = window.setInterval(syncDisplay, 250);
+    }
+
+    return true;
+  };
+
+  const handleStart = async () => {
+    setError(null);
+    clearPersistedSession(user);
+
+    stepCounterRef.current.reset();
+    activeBaseRef.current = 0;
+    runStartRef.current = performance.now();
+    startedAtRef.current = Date.now();
+    gpsModeRef.current = false;
+    gpsDistanceRef.current = 0;
+    lastPosRef.current = null;
+    routeRef.current = [];
+    mapProofRef.current = null;
+    setMapProof(null);
+
+    // Seed a starting point in Simulate mode so the map has a pin to draw from.
+    if (simulate) {
+      routeRef.current.push({ latitude: 14.599512, longitude: 120.984222 });
+    }
+
+    const attached = await attachTracking();
+    if (!attached) return; // attachTracking already set the error message
 
     statusRef.current = 'running';
     setStatus('running');
     syncDisplay();
+    persistSession(buildSnapshot('running', 0));
   };
 
   const handlePause = () => {
@@ -272,17 +321,22 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     statusRef.current = 'paused';
     setStatus('paused');
     syncDisplay();
+    persistSession(buildSnapshot('paused', activeBaseRef.current));
   };
 
-  const handleResume = () => {
+  const handleResume = async () => {
     if (statusRef.current !== 'paused') return;
+    // Sensors/timers may have been torn down by a reload — re-attach them.
+    const attached = await attachTracking();
+    if (!attached) return;
     runStartRef.current = performance.now();
     statusRef.current = 'running';
     setStatus('running');
     syncDisplay();
+    persistSession(buildSnapshot('running', activeBaseRef.current));
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (statusRef.current !== 'running' && statusRef.current !== 'paused') return;
     const currentSteps = stepCounterRef.current.steps;
     const activeMs = getActiveMs();
@@ -294,7 +348,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       endTime: Date.now(),
       activeSeconds: Math.round(activeMs / 1000),
       route: routeRef.current.slice(),
-      mapProofUrl: mapProof || undefined
+      mapProofUrl: mapProofRef.current || undefined
     };
     statusRef.current = 'finished';
     setStatus('finished');
@@ -303,19 +357,113 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setSteps(currentSteps);
     setDistanceMeters(session.distanceMeters);
     setDistanceSource(session.distanceSource);
+    setRoutePoints(routeRef.current.slice());
     setError(null);
-    onSessionFinish(session);
-  };
 
-  const handleMapSaved = (dataUrl: string) => {
-    setMapProof(dataUrl);
-    onMapProofSaved?.(dataUrl);
+    // Persist the finished-but-not-yet-logged session so a reload mid-flow
+    // doesn't lose it — the log form restores it and only the photo is missing.
+    persistSession(buildSnapshot('finished', activeMs, session.endTime));
+
+    onSessionFinish(session);
+
+    // AUTO-SAVE the route map as proof — no button needed. Runs in the background
+    // right when the session ends; the result is attached to the log alongside the photo.
+    const url = await routeMapRef.current?.capture();
+    if (url) {
+      mapProofRef.current = url;
+      setMapProof(url);
+      onMapProofSaved?.(url);
+      // Refresh the snapshot so a restore already includes the map proof.
+      persistSession(buildSnapshot('finished', activeMs, session.endTime));
+    }
   };
 
   const handleCancel = () => {
     stopTracking();
+    clearPersistedSession(user);
     resetSessionState();
+    onSessionReset?.();
   };
+
+  // Restore an in-progress (or finished-but-not-logged) session saved before a
+  // page reload, so the user never starts from zero.
+  useEffect(() => {
+    const saved = loadPersistedSession(user);
+    if (!saved) return;
+
+    // Rebuild the base tracking state so the display / finish flow sees history.
+    stepCounterRef.current.addSteps(saved.steps);
+    gpsDistanceRef.current = saved.distanceMeters;
+    gpsModeRef.current = saved.gpsMode;
+    startedAtRef.current = saved.startTime;
+    routeRef.current = saved.route.slice();
+    mapProofRef.current = saved.mapProof || null;
+    setMapProof(saved.mapProof || null);
+    setRoutePoints(saved.route.slice());
+    setDistanceSource(saved.distanceSource);
+    setSteps(saved.steps);
+    setDistanceMeters(saved.distanceMeters);
+
+    if (saved.status === 'finished') {
+      statusRef.current = 'finished';
+      setStatus('finished');
+      setFinalElapsedMs(saved.activeMs);
+      setElapsedMs(saved.activeMs);
+      return;
+    }
+
+    // running / paused → restore totals and land in PAUSED so the user's Resume
+    // tap can re-acquire motion/GPS permissions and listeners (iOS requires a
+    // user gesture). Active time rolls forward from the wall-clock savedAt.
+    const elapsed =
+      saved.status === 'running'
+        ? saved.activeMs + (Date.now() - saved.savedAt)
+        : saved.activeMs;
+
+    activeBaseRef.current = Math.max(0, elapsed);
+    statusRef.current = 'paused';
+    setStatus('paused');
+    setElapsedMs(activeBaseRef.current);
+    if (saved.simulate) setSimulate(true);
+
+    // Rewrite as paused so a second reload keeps elapsed time stable.
+    persistSession({
+      ...saved,
+      status: 'paused',
+      activeMs: activeBaseRef.current,
+      savedAt: Date.now(),
+      mapProof: mapProofRef.current || undefined
+    });
+  }, [user]);
+
+  // Checkpoint the live session whenever the page is closed or reloaded mid-workout.
+  useEffect(() => {
+    const persistOnUnload = () => {
+      if (statusRef.current !== 'running' && statusRef.current !== 'paused') return;
+      const activeMs = statusRef.current === 'running' ? getActiveMs() : activeBaseRef.current;
+      persistSession({
+        user,
+        status: statusRef.current === 'running' ? 'running' : 'paused',
+        steps: stepCounterRef.current.steps,
+        distanceMeters: Math.round(getDistance(stepCounterRef.current.steps)),
+        distanceSource: gpsModeRef.current ? 'gps' : 'estimated',
+        gpsMode: gpsModeRef.current,
+        startTime: startedAtRef.current,
+        activeMs,
+        savedAt: Date.now(),
+        route: routeRef.current.slice(),
+        mapProof: mapProofRef.current || undefined,
+        simulate
+      });
+    };
+
+    window.addEventListener('beforeunload', persistOnUnload);
+    window.addEventListener('pagehide', persistOnUnload);
+    return () => {
+      window.removeEventListener('beforeunload', persistOnUnload);
+      window.removeEventListener('pagehide', persistOnUnload);
+    };
+  }, [simulate, user]);
 
   // ---------- Theming ----------
   const mainBg = isJm ? 'bg-emerald-600' : 'bg-pink-600';
@@ -485,11 +633,11 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
           {/* Live route trace */}
           {routePoints.length > 0 ? (
             <RouteMap
+              ref={routeMapRef}
               points={routePoints}
               accent={isJm ? '#10b981' : '#ec4899'}
               height={220}
               autoFit
-              onSaveScreenshot={handleMapSaved}
             />
           ) : running || paused ? (
             <p className="text-[11px] font-bold text-slate-400 text-center border border-dashed border-slate-200 rounded-2xl py-4">

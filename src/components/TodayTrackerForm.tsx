@@ -1,10 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { UserProfile, UserStats, UserType, ExerciseCategory, WorkoutLog } from '../types';
 import { Camera, Clock, Sparkles, Check, Plus, MapPin, Smile, Image as ImageIcon, AlertCircle, Footprints, Route, Timer, X } from 'lucide-react';
 import { getTodayDateStr } from '../utils/storage';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ActivitySessionTracker, StepSession } from './ActivitySessionTracker';
 import { activeSecondsToMins, formatElapsed, formatDistance, formatClockTime } from '../lib/trackerUtils';
+import { clearPersistedSession, loadPersistedSession } from '../utils/sessionPersistence';
 
 interface TodayTrackerFormProps {
   user: UserType;
@@ -67,6 +68,29 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [highlightDetails, setHighlightDetails] = useState(false);
   const extraDetailsRef = useRef<HTMLDivElement | null>(null);
+
+  // After a reload, restore a finished-but-not-logged tracked session so the
+  // user only has to attach the proof photo and press LOG SESSION.
+  useEffect(() => {
+    const saved = loadPersistedSession(user);
+    if (!saved || saved.status !== 'finished') return;
+
+    const activeSeconds = Math.round(saved.activeMs / 1000);
+    setSession({
+      steps: saved.steps,
+      distanceMeters: saved.distanceMeters,
+      distanceSource: saved.distanceSource,
+      startTime: saved.startTime,
+      endTime: saved.endTime ?? Date.now(),
+      activeSeconds,
+      route: saved.route,
+      mapProofUrl: saved.mapProof
+    });
+    const mins = activeSecondsToMins(activeSeconds);
+    if (mins > 0) setDurationMins(mins);
+    setCategory('Walking');
+    setShowAddAnother(true);
+  }, [user]);
 
   // Auto-fill the form from an automatically tracked session. The exercise type
   // becomes Walking, the logging form is revealed, and a proof photo is asked for.
@@ -145,6 +169,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       setProofPhoto(null);
       setSession(null);
       setNotes('');
+      clearPersistedSession(user); // workout logged — wipe the restored session
     } catch (err) {
       console.error('Failed to log workout:', err);
       setSubmitError(
@@ -190,6 +215,10 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
         isJm={isJm}
         onSessionFinish={handleSessionFinish}
         onMapProofSaved={handleSessionMapSaved}
+        onSessionReset={() => {
+          setSession(null);
+          setHighlightDetails(false);
+        }}
       />
 
       {/* Main Container Card */}
@@ -315,6 +344,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
                     onClick={() => {
                       setSession(null);
                       setHighlightDetails(false);
+                      clearPersistedSession(user); // discard the restored session
                     }}
                     className="text-[11px] font-black text-slate-400 hover:text-rose-500 flex items-center gap-1"
                   >
@@ -465,9 +495,9 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
                   </span>
                 </div>
               ) : (
-                <p className="h-40 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center gap-1.5 text-[11px] font-bold text-slate-400 px-4 text-center">
-                  <MapPin className="w-5 h-5" />
-                  No map screenshot yet — use <b>Save Map</b> in the Live Activity Tracker above
+                <p className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 shrink-0" />
+                  The route map is saved automatically with your session — no need to press anything.
                 </p>
               )}
             </div>
