@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as L from 'leaflet';
 import html2canvas from 'html2canvas';
 import 'leaflet/dist/leaflet.css';
@@ -30,18 +30,21 @@ function makeIcon(html: string): L.DivIcon {
   });
 }
 
+/** Imperative handle that lets the Activity Tracker auto-capture the map view. */
+export interface RouteMapHandle {
+  /** Capture the current map view as a PNG data URL (or null on failure/invalid). */
+  capture: () => Promise<string | null>;
+}
+
 /**
  * Renders a set of GPS points as a route on a free OpenStreetMap (Leaflet)
  * map. Used live inside the Activity Tracker and to replay saved routes from
  * a workout log card.
  */
-export const RouteMap: React.FC<RouteMapProps> = ({
-  points,
-  accent = '#6366f1',
-  height = 240,
-  autoFit = false,
-  onSaveScreenshot
-}) => {
+export const RouteMap = forwardRef<RouteMapHandle, RouteMapProps>(function RouteMap(
+  { points, accent = '#6366f1', height = 240, autoFit = false, onSaveScreenshot },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
@@ -107,10 +110,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     if (hide && map.hasLayer(hide)) map.removeLayer(hide);
   }, [baseMap]);
 
-  /** Capture the current map view as a PNG and hand it to the parent. */
-  const handleSaveScreenshot = async () => {
+  /** Capture the current map view as a PNG data URL (or null on failure). */
+  const capture = useCallback(async (): Promise<string | null> => {
     const container = containerRef.current;
-    if (!container || !onSaveScreenshot || isCapturing) return;
+    if (!container || isCapturing) return null;
     setIsCapturing(true);
     try {
       // Both the OSM and Esri tile servers send Access-Control-Allow-Origin:*,
@@ -122,13 +125,16 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         backgroundColor: '#f1f5f9',
         logging: false
       });
-      onSaveScreenshot(canvas.toDataURL('image/png'));
+      return canvas.toDataURL('image/png');
     } catch (err) {
       console.error('Failed to capture map screenshot:', err);
+      return null;
     } finally {
       setIsCapturing(false);
     }
-  };
+  }, [isCapturing]);
+
+  useImperativeHandle(ref, () => ({ capture }), [capture]);
 
   // Draw / update the polyline and markers whenever points change.
   useEffect(() => {
@@ -249,7 +255,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       {onSaveScreenshot && points.length > 0 && (
         <button
           type="button"
-          onClick={handleSaveScreenshot}
+          onClick={async () => {
+            const url = await capture();
+            if (url && onSaveScreenshot) onSaveScreenshot(url);
+          }}
           disabled={isCapturing}
           className="absolute bottom-2 left-2 z-[1000] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl px-3 py-1.5 text-[11px] font-black shadow-md transition flex items-center gap-1.5"
           title="Save this map view as proof"
@@ -260,4 +269,4 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       )}
     </div>
   );
-};
+});

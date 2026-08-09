@@ -206,7 +206,7 @@ const userProfileToRow = (profile: UserProfile): UserProfileRow => ({
 });
 
 // ---------------------------------------------------------------------------
-// localStorage fallback (used only when Supabase is not configured)
+// localStorage cache (always kept as a mirror — cloud-first, cache fallback)
 // ---------------------------------------------------------------------------
 
 const lsGetAllLogs = (): WorkoutLog[] => {
@@ -242,10 +242,28 @@ const lsGetUserProfiles = (): Record<UserType, UserProfile> => {
   return DEFAULT_PROFILES;
 };
 
+const lsSaveUserProfiles = (profiles: Record<UserType, UserProfile>): void => {
+  try {
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+  } catch (err) {
+    console.error('Failed to save user profiles:', err);
+  }
+};
+
 const lsSaveUserProfile = (user: UserType, profile: UserProfile): void => {
   const profiles = lsGetUserProfiles();
   profiles[user] = profile;
-  localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+  lsSaveUserProfiles(profiles);
+};
+
+/** Merge two log lists into one canonical array. Local-only entries (written
+ * while the cloud was unreachable) are preserved; on id collisions the cloud
+ * copy wins. The result is sorted newest-first. */
+const mergeLogs = (cloudLogs: WorkoutLog[], localLogs: WorkoutLog[]): WorkoutLog[] => {
+  const byId = new Map<string, WorkoutLog>();
+  for (const log of localLogs) byId.set(log.id, log);
+  for (const log of cloudLogs) byId.set(log.id, log); // cloud copy wins
+  return Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
 };
 
 // ---------------------------------------------------------------------------
@@ -265,8 +283,9 @@ const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
     .order('timestamp', { ascending: false });
 
   if (error) {
-    console.error('[supabase] Failed to fetch exercise logs:', error.message);
-    return [];
+    // Throw so callers can fall back to the local cache instead of showing an
+    // empty dashboard when the cloud is unreachable or the project is reset.
+    throw new Error(error.message);
   }
 
   return (data ?? []).map(rowToWorkoutLog);
@@ -304,27 +323,6 @@ async function dbInsertWorkoutLogs(
   }
 }
 
-const dbAddWorkoutLog = async (logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> => {
-  const sb = await getSupabase();
-  if (!sb) {
-    throw new Error('Supabase is not configured.');
-  }
-
-  const newLog: WorkoutLog = {
-    ...logData,
-    id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-    timestamp: Date.now()
-  };
-
-  try {
-    await dbInsertWorkoutLogs(sb, [workoutLogToRow(newLog)]);
-  } catch (err) {
-    console.error('[supabase] Failed to insert workout log:', err instanceof Error ? err.message : String(err));
-    throw err;
-  }
-
-  return newLog;
-};
 
 const dbUpdateWorkoutLog = async (updatedLog: WorkoutLog): Promise<void> => {
   const sb = await getSupabase();
@@ -365,8 +363,8 @@ const dbGetUserProfiles = async (): Promise<Record<UserType, UserProfile>> => {
     .select('*');
 
   if (error) {
-    console.error('[supabase] Failed to fetch user profiles:', error.message);
-    return DEFAULT_PROFILES;
+    // Throw so callers can fall back to the local profile cache.
+    throw new Error(error.message);
   }
 
   const profiles = {} as Record<UserType, UserProfile>;
@@ -415,10 +413,23 @@ const dbClearAllLogs = async (): Promise<void> => {
 // ---------------------------------------------------------------------------
 
 export async function getAllLogs(): Promise<WorkoutLog[]> {
+  const localLogs = lsGetAllLogs();
+
   if (await isSupabaseConfigured()) {
-    return dbGetAllLogs();
+    try {
+      const cloudLogs = await dbGetAllLogs();
+      // Refresh the local mirror so the cache is always a superset of what this
+      // browser has seen (keeps history safe if the cloud is later unreachable).
+      const merged = mergeLogs(cloudLogs, localLogs);
+      lsSaveAllLogs(merged);
+      return merged;
+    } catch (err) {
+      console.error('[storage] Cloud fetch failed; falling back to local cache:', err);
+      return localLogs;
+    }
   }
-  return lsGetAllLogs();
+
+  return localLogs;
 }
 
 export async function getLogsForUser(user: UserType): Promise<WorkoutLog[]> {
@@ -429,57 +440,90 @@ export async function getLogsForUser(user: UserType): Promise<WorkoutLog[]> {
 }
 
 export async function addWorkoutLog(logData: Omit<WorkoutLog, 'id' | 'timestamp'>): Promise<WorkoutLog> {
-  if (await isSupabaseConfigured()) {
-    return dbAddWorkoutLog(logData);
-  }
-
-  const logs = lsGetAllLogs();
   const newLog: WorkoutLog = {
     ...logData,
     id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
     timestamp: Date.now()
   };
 
-  const updated = [newLog, ...logs];
-  lsSaveAllLogs(updated);
+  // ALWAYS save to the local mirror first (offline / cloud-down safe).
+  lsSaveAllLogs([newLog, ...lsGetAllLogs()]);
+
+  if (await isSupabaseConfigured()) {
+    const sb = await getSupabase();
+    if (sb) {
+      try {
+        await dbInsertWorkoutLogs(sb, [workoutLogToRow(newLog)]);
+      } catch (err) {
+        // Non-fatal: the log stays in the browser cache and gets pushed to the
+        // cloud on a later load via syncLocalLogsToCloud().
+        console.warn('[storage] Cloud insert failed; workout kept in browser cache:', err);
+      }
+    }
+  }
+
   return newLog;
 }
 
 export async function updateWorkoutLog(updatedLog: WorkoutLog): Promise<void> {
-  if (await isSupabaseConfigured()) {
-    return dbUpdateWorkoutLog(updatedLog);
-  }
-
   const logs = lsGetAllLogs();
   const idx = logs.findIndex(l => l.id === updatedLog.id);
   if (idx !== -1) {
     logs[idx] = updatedLog;
     lsSaveAllLogs(logs);
   }
+
+  if (await isSupabaseConfigured()) {
+    try {
+      await dbUpdateWorkoutLog(updatedLog);
+    } catch (err) {
+      console.warn('[storage] Cloud update failed; change kept in browser cache:', err);
+    }
+  }
 }
 
 export async function deleteWorkoutLog(id: string): Promise<void> {
-  if (await isSupabaseConfigured()) {
-    return dbDeleteWorkoutLog(id);
-  }
-
   const logs = lsGetAllLogs();
   const filtered = logs.filter(l => l.id !== id);
   lsSaveAllLogs(filtered);
+
+  if (await isSupabaseConfigured()) {
+    try {
+      await dbDeleteWorkoutLog(id);
+    } catch (err) {
+      console.warn('[storage] Cloud delete failed; removal kept in browser cache:', err);
+    }
+  }
 }
 
 export async function getUserProfiles(): Promise<Record<UserType, UserProfile>> {
+  const localProfiles = lsGetUserProfiles();
+
   if (await isSupabaseConfigured()) {
-    return dbGetUserProfiles();
+    try {
+      const cloudProfiles = await dbGetUserProfiles();
+      lsSaveUserProfiles(cloudProfiles); // refresh the local mirror
+      return cloudProfiles;
+    } catch (err) {
+      console.error('[storage] Cloud profile fetch failed; falling back to local cache:', err);
+      return localProfiles;
+    }
   }
-  return lsGetUserProfiles();
+
+  return localProfiles;
 }
 
 export async function saveUserProfile(user: UserType, profile: UserProfile): Promise<void> {
-  if (await isSupabaseConfigured()) {
-    return dbSaveUserProfile(user, profile);
-  }
+  // Always keep the local mirror so profile edits survive a cloud outage.
   lsSaveUserProfile(user, profile);
+
+  if (await isSupabaseConfigured()) {
+    try {
+      await dbSaveUserProfile(user, profile);
+    } catch (err) {
+      console.warn('[storage] Cloud profile save failed; kept in browser cache:', err);
+    }
+  }
 }
 
 export async function calculateUserStats(user: UserType): Promise<UserStats> {
@@ -572,11 +616,15 @@ export async function calculateUserStats(user: UserType): Promise<UserStats> {
 }
 
 export async function clearAllLogs(): Promise<void> {
-  if (await isSupabaseConfigured()) {
-    return dbClearAllLogs();
-  }
+  lsSaveAllLogs([]); // always clear the local mirror too
 
-  localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify([]));
+  if (await isSupabaseConfigured()) {
+    try {
+      await dbClearAllLogs();
+    } catch (err) {
+      console.warn('[storage] Cloud clear failed; local mirror was cleared anyway:', err);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,9 +708,8 @@ export async function syncLocalLogsToCloud(): Promise<{ uploaded: number; total:
     }
   }
 
-  // Only clear localStorage after the upload succeeded so nothing is lost.
-  lsSaveAllLogs([]);
-
-  console.log(`[sync] Uploaded ${missing.length} local workout log(s) to the cloud.`);
+  // Keep the local mirror as a recovery cache. Re-running this is idempotent
+  // (matched by id), so keeping the copy never creates duplicate cloud rows.
+  console.log(`[sync] Uploaded ${missing.length} local workout log(s) to the cloud; local mirror kept.`);
   return { uploaded: missing.length, total: localLogs.length };
 }
