@@ -116,6 +116,26 @@ export const RouteMap = forwardRef<RouteMapHandle, RouteMapProps>(function Route
     if (!container || isCapturing) return null;
     setIsCapturing(true);
     try {
+      // Let any in-flight map tiles finish loading first — html2canvas bakes
+      // the DOM as-is, so a half-loaded tile would come out as a gray/blank
+      // patch (or a CORS error) and silently drop the proof.
+      const images = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.race([
+        Promise.all(
+          images.map((img: HTMLImageElement) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.addEventListener('load', () => resolve(), { once: true });
+                  img.addEventListener('error', () => resolve(), { once: true });
+                })
+          )
+        ),
+        new Promise<void>((resolve) => setTimeout(resolve, 2500))
+      ]);
+      // Give Leaflet a tick to settle its panes/layout after the tiles arrive.
+      await new Promise((r) => setTimeout(r, 150));
+
       // Both the OSM and Esri tile servers send Access-Control-Allow-Origin:*,
       // so useCORS can rebuild the map image cross-origin without tainting.
       const canvas = await html2canvas(container, {
