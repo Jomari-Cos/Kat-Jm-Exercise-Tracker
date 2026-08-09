@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { UserProfile, WorkoutLog } from '../types';
 import { formatDatePretty } from '../utils/storage';
-import { formatDistance, formatClockTime } from '../lib/trackerUtils';
+import { formatDistance, formatClockTime, haversineMeters } from '../lib/trackerUtils';
 import { Camera, Trash2, Sparkles, CheckCircle2, MapPin, Eye, Footprints, Route, Timer } from 'lucide-react';
+import { RouteMap } from './RouteMap';
 
 interface WorkoutLogCardProps {
   log: WorkoutLog;
@@ -16,9 +17,16 @@ interface WorkoutLogCardProps {
  */
 export const WorkoutLogCard: React.FC<WorkoutLogCardProps> = ({ log, profiles, onDeleteLog }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [showRoute, setShowRoute] = useState(false);
 
   const logUser = profiles[log.user];
   const isJm = log.user === 'JM';
+
+  const routePoints = log.route ?? [];
+  const routeDistanceM =
+    routePoints.length >= 2
+      ? routePoints.reduce((sum, p, i) => (i === 0 ? sum : sum + haversineMeters(routePoints[i - 1], p)), 0)
+      : 0;
 
 
   return (
@@ -131,6 +139,25 @@ export const WorkoutLogCard: React.FC<WorkoutLogCardProps> = ({ log, profiles, o
                   <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                     <Timer className="w-3 h-3 text-amber-500" /> {formatClockTime(log.startTime)} → {formatClockTime(log.endTime)}
                   </span>
+                )}
+              </div>
+            )}
+
+            {/* Route map trace */}
+            {routePoints.length >= 2 && (
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowRoute((s) => !s)}
+                  className="text-[11px] font-black text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  {showRoute ? 'Hide Route' : 'View Route'} · {formatDistance(routeDistanceM)}
+                </button>
+                {showRoute && (
+                  <div className="mt-2">
+                    <RouteMap points={routePoints} accent={isJm ? '#10b981' : '#ec4899'} height={240} />
+                  </div>
                 )}
               </div>
             )}

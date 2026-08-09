@@ -1,4 +1,4 @@
-import { UserProfile, UserStats, UserType, WorkoutLog } from '../types';
+import { LatLng, UserProfile, UserStats, UserType, WorkoutLog } from '../types';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 // Default avatars are served from the static `public/avatars` assets so every
@@ -93,6 +93,28 @@ interface WorkoutLogRow {
   distance_meters: number | null;
   start_time: number | null;
   end_time: number | null;
+  route: LatLng[] | null;
+}
+
+/** Normalize the `route` column (JSONB array or JSON-encoded text) into LatLng[]. */
+function parseRoute(value: unknown): LatLng[] | undefined {
+  if (Array.isArray(value)) {
+    const points = value.filter(
+      (p): p is LatLng =>
+        typeof p === 'object' && p !== null &&
+        typeof (p as LatLng).latitude === 'number' &&
+        typeof (p as LatLng).longitude === 'number'
+    );
+    return points.length > 0 ? points : undefined;
+  }
+  if (typeof value === 'string') {
+    try {
+      return parseRoute(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
@@ -113,6 +135,7 @@ const rowToWorkoutLog = (row: WorkoutLogRow): WorkoutLog => ({
   distanceMeters: row.distance_meters ?? undefined,
   startTime: row.start_time ?? undefined,
   endTime: row.end_time ?? undefined,
+  route: parseRoute(row.route),
 });
 
 const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date: string } => {
@@ -138,6 +161,7 @@ const workoutLogToRow = (log: WorkoutLog): Omit<WorkoutLogRow, 'date'> & { date:
   if (log.distanceMeters !== undefined) row.distance_meters = log.distanceMeters;
   if (log.startTime !== undefined) row.start_time = log.startTime;
   if (log.endTime !== undefined) row.end_time = log.endTime;
+  if (log.route && log.route.length > 0) row.route = log.route;
 
   return row as Omit<WorkoutLogRow, 'date'> & { date: string };
 };
@@ -245,7 +269,7 @@ const dbGetAllLogs = async (): Promise<WorkoutLog[]> => {
   return (data ?? []).map(rowToWorkoutLog);
 };
 
-const TRACKING_COLUMNS = ['steps', 'distance_meters', 'start_time', 'end_time'];
+const TRACKING_COLUMNS = ['steps', 'distance_meters', 'start_time', 'end_time', 'route'];
 
 /**
  * Insert workout log row(s) into Supabase, gracefully retrying without the

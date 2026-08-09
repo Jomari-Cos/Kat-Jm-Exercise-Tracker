@@ -4,10 +4,9 @@
  * Used by the ActivitySessionTracker component.
  */
 
-export interface LatLng {
-  latitude: number;
-  longitude: number;
-}
+import type { LatLng } from '../types';
+
+export type { LatLng } from '../types';
 
 export interface StepCounter {
   readonly steps: number;
