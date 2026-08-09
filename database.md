@@ -39,6 +39,7 @@ Represents an individual workout entry submitted by either `JM` or `KAT`.
 
 | `notes` | `string` | No | Personal notes, performance stats, PRs, or description |
 | `proofPhotoUrl` | `string` | No | Base64 data URL or photo link attached as workout proof |
+| `mapProofUrl` | `string` | No | Base64 PNG screenshot of the route map, logged together with the photo proof |
 | `aiFeedback` | `string` | No | AI-generated motivational cheer or feedback message |
 | `mood` | `string` | No | Workout mood tag (e.g., `'🔥 On Fire'`, `'💪 Strong'`, `'💦 Sweaty'`, `'🧘 Calm'`) |
 | `location` | `string` | No | Exercise location (e.g., `'Gym'`, `'Home'`, `'Outdoors'`) |

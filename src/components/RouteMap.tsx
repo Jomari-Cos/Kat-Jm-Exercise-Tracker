@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as L from 'leaflet';
+import html2canvas from 'html2canvas';
 import 'leaflet/dist/leaflet.css';
-import { Maximize2 } from 'lucide-react';
+import { Maximize2, Map as MapIcon, Satellite as SatelliteIcon, Camera as CameraIcon } from 'lucide-react';
 import { LatLng } from '../types';
 
 interface RouteMapProps {
@@ -11,6 +12,8 @@ interface RouteMapProps {
   height?: number;
   /** Live mode: refit the view periodically so it follows the walk. */
   autoFit?: boolean;
+  /** When provided, shows a "Save Map" button that captures the current view. */
+  onSaveScreenshot?: (dataUrl: string) => void;
 }
 
 const START_MARKER_HTML =
@@ -36,7 +39,8 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   points,
   accent = '#6366f1',
   height = 240,
-  autoFit = false
+  autoFit = false,
+  onSaveScreenshot
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -44,6 +48,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   const startMarkerRef = useRef<L.Marker | null>(null);
   const endMarkerRef = useRef<L.Marker | null>(null);
   const hasFitBoundsRef = useRef(false);
+  const standardLayerRef = useRef<L.TileLayer | null>(null);
+  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const [baseMap, setBaseMap] = useState<'standard' | 'satellite'>('standard');
+  const [isCapturing, setIsCapturing] = useState(false);
 
   // Create the Leaflet map exactly once.
   useEffect(() => {
@@ -51,11 +59,25 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     if (!container || mapRef.current) return;
 
     const map = L.map(container, { zoomControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+    const standard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    });
+
+    const satellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        attribution:
+          'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+      }
+    );
+
+    standard.addTo(map);
+    standardLayerRef.current = standard;
+    satelliteLayerRef.current = satellite;
     mapRef.current = map;
 
     // Keep the map correctly sized if its container grows/shrinks.
@@ -66,12 +88,47 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
+      standardLayerRef.current = null;
+      satelliteLayerRef.current = null;
       polylineRef.current = null;
       startMarkerRef.current = null;
       endMarkerRef.current = null;
       hasFitBoundsRef.current = false;
     };
   }, []);
+
+  // Switch between the Standard and Satellite base layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const show = baseMap === 'standard' ? standardLayerRef.current : satelliteLayerRef.current;
+    const hide = baseMap === 'standard' ? satelliteLayerRef.current : standardLayerRef.current;
+    if (show && !map.hasLayer(show)) show.addTo(map);
+    if (hide && map.hasLayer(hide)) map.removeLayer(hide);
+  }, [baseMap]);
+
+  /** Capture the current map view as a PNG and hand it to the parent. */
+  const handleSaveScreenshot = async () => {
+    const container = containerRef.current;
+    if (!container || !onSaveScreenshot || isCapturing) return;
+    setIsCapturing(true);
+    try {
+      // Both the OSM and Esri tile servers send Access-Control-Allow-Origin:*,
+      // so useCORS can rebuild the map image cross-origin without tainting.
+      const canvas = await html2canvas(container, {
+        useCORS: true,
+        allowTaint: false,
+        scale: 2,
+        backgroundColor: '#f1f5f9',
+        logging: false
+      });
+      onSaveScreenshot(canvas.toDataURL('image/png'));
+    } catch (err) {
+      console.error('Failed to capture map screenshot:', err);
+    } finally {
+      setIsCapturing(false);
+    }
+  };
 
   // Draw / update the polyline and markers whenever points change.
   useEffect(() => {
@@ -155,6 +212,29 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   return (
     <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100">
       <div ref={containerRef} className="w-full" style={{ height }} />
+
+      {/* Basemap toggle: Standard map vs Satellite imagery */}
+      <div className="absolute top-2 left-2 z-[1000] flex bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setBaseMap('standard')}
+          className={`px-2.5 py-1.5 text-[11px] font-black flex items-center gap-1 transition ${
+            baseMap === 'standard' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <MapIcon className="w-3.5 h-3.5" /> Map
+        </button>
+        <button
+          type="button"
+          onClick={() => setBaseMap('satellite')}
+          className={`px-2.5 py-1.5 text-[11px] font-black flex items-center gap-1 transition ${
+            baseMap === 'satellite' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <SatelliteIcon className="w-3.5 h-3.5" /> Satellite
+        </button>
+      </div>
+
       {points.length > 0 && (
         <button
           type="button"
@@ -163,6 +243,19 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           title="Recenter map"
         >
           <Maximize2 className="w-4 h-4" />
+        </button>
+      )}
+
+      {onSaveScreenshot && points.length > 0 && (
+        <button
+          type="button"
+          onClick={handleSaveScreenshot}
+          disabled={isCapturing}
+          className="absolute bottom-2 left-2 z-[1000] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl px-3 py-1.5 text-[11px] font-black shadow-md transition flex items-center gap-1.5"
+          title="Save this map view as proof"
+        >
+          <CameraIcon className="w-3.5 h-3.5" />
+          {isCapturing ? 'Saving…' : 'Save Map'}
         </button>
       )}
     </div>

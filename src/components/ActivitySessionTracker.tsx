@@ -32,11 +32,13 @@ export interface StepSession {
   endTime: number;
   activeSeconds: number;
   route: LatLng[];
+  mapProofUrl?: string;
 }
 
 interface ActivitySessionTrackerProps {
   isJm: boolean;
   onSessionFinish: (session: StepSession) => void;
+  onMapProofSaved?: (dataUrl: string) => void;
 }
 
 type TrackerStatus = 'idle' | 'running' | 'paused' | 'finished';
@@ -53,7 +55,8 @@ const SIM_STEPS_PER_SECOND = 2; // walking pace used by Simulate mode (~120 step
  */
 export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   isJm,
-  onSessionFinish
+  onSessionFinish,
+  onMapProofSaved
 }) => {
   // Display state
   const [status, setStatus] = useState<TrackerStatus>('idle');
@@ -67,6 +70,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   const [simulate, setSimulate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routePoints, setRoutePoints] = useState<LatLng[]>([]);
+  const [mapProof, setMapProof] = useState<string | null>(null);
 
   // Mutable tracking refs (avoid stale closures inside event callbacks).
   const statusRef = useRef<TrackerStatus>('idle');
@@ -149,6 +153,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setDistanceMeters(0);
     setDistanceSource('estimated');
     setRoutePoints([]);
+    setMapProof(null);
     setError(null);
     setSimulate(false);
   }, []);
@@ -288,7 +293,8 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       startTime: startedAtRef.current,
       endTime: Date.now(),
       activeSeconds: Math.round(activeMs / 1000),
-      route: routeRef.current.slice()
+      route: routeRef.current.slice(),
+      mapProofUrl: mapProof || undefined
     };
     statusRef.current = 'finished';
     setStatus('finished');
@@ -299,6 +305,11 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setDistanceSource(session.distanceSource);
     setError(null);
     onSessionFinish(session);
+  };
+
+  const handleMapSaved = (dataUrl: string) => {
+    setMapProof(dataUrl);
+    onMapProofSaved?.(dataUrl);
   };
 
   const handleCancel = () => {
@@ -478,12 +489,22 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
               accent={isJm ? '#10b981' : '#ec4899'}
               height={220}
               autoFit
+              onSaveScreenshot={handleMapSaved}
             />
           ) : running || paused ? (
             <p className="text-[11px] font-bold text-slate-400 text-center border border-dashed border-slate-200 rounded-2xl py-4">
               📡 Waiting for GPS signal to trace your route…
             </p>
           ) : null}
+
+          {mapProof && (
+            <div className="flex items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2">
+              <img src={mapProof} alt="Map proof" className="w-10 h-10 rounded-lg object-cover border border-indigo-200" />
+              <p className="text-[11px] font-black text-indigo-700">
+                Map proof saved ✓ — it will be logged together with your photo.
+              </p>
+            </div>
+          )}
 
           {(running || paused) && (
             <>

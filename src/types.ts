@@ -39,6 +39,7 @@ export interface WorkoutLog {
   startTime?: number; // Unix epoch ms when the activity started
   endTime?: number; // Unix epoch ms when the activity ended
   route?: LatLng[]; // GPS trace of the walked/running route
+  mapProofUrl?: string; // base64 PNG screenshot of the route map (saved as proof)
 }
 
 export interface UserProfile {
