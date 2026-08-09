@@ -127,6 +127,7 @@ export const TodayTrackerForm: React.FC<TodayTrackerFormProps> = ({
       distanceMeters: session?.distanceMeters,
       startTime: session?.startTime,
       endTime: session?.endTime,
+      route: session?.route,
       mood,
       proofPhotoUrl: photo,
       aiFeedback: feedback || undefined

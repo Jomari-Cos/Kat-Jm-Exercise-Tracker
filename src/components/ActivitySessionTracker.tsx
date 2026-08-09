@@ -21,6 +21,7 @@ import {
   formatClockTime,
   LatLng
 } from '../lib/trackerUtils';
+import { RouteMap } from './RouteMap';
 
 /** Result of one automatically tracked activity session. */
 export interface StepSession {
@@ -30,6 +31,7 @@ export interface StepSession {
   startTime: number;
   endTime: number;
   activeSeconds: number;
+  route: LatLng[];
 }
 
 interface ActivitySessionTrackerProps {
@@ -64,6 +66,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   const [gpsSupported, setGpsSupported] = useState(false);
   const [simulate, setSimulate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [routePoints, setRoutePoints] = useState<LatLng[]>([]);
 
   // Mutable tracking refs (avoid stale closures inside event callbacks).
   const statusRef = useRef<TrackerStatus>('idle');
@@ -78,6 +81,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
   const motionHandlerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
   const displayTimerRef = useRef<number | null>(null);
   const simTimerRef = useRef<number | null>(null);
+  const routeRef = useRef<LatLng[]>([]); // recorded GPS trace (capped)
 
   const isRunning = () => statusRef.current === 'running';
 
@@ -93,6 +97,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setSteps(currentSteps);
     setDistanceMeters(getDistance(currentSteps));
     setDistanceSource(gpsModeRef.current ? 'gps' : 'estimated');
+    setRoutePoints(routeRef.current.slice());
   }, []);
 
   const stopTimers = useCallback(() => {
@@ -134,6 +139,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     gpsModeRef.current = false;
     gpsDistanceRef.current = 0;
     lastPosRef.current = null;
+    routeRef.current = [];
     watchIdRef.current = null;
     statusRef.current = 'idle';
     setStatus('idle');
@@ -142,6 +148,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setSteps(0);
     setDistanceMeters(0);
     setDistanceSource('estimated');
+    setRoutePoints([]);
     setError(null);
     setSimulate(false);
   }, []);
@@ -182,6 +189,12 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     gpsModeRef.current = false;
     gpsDistanceRef.current = 0;
     lastPosRef.current = null;
+    routeRef.current = [];
+
+    // Seed a starting point in Simulate mode so the map has a pin to draw from.
+    if (simulate) {
+      routeRef.current.push({ latitude: 14.599512, longitude: 120.984222 });
+    }
 
     // Real accelerometer listener.
     if (hasMotionApi && !simulate) {
@@ -200,12 +213,16 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
             const current: LatLng = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
             if (!lastPosRef.current) {
               lastPosRef.current = current;
-              return;
             }
             const delta = haversineMeters(lastPosRef.current, current);
             if (delta > 5) {
               gpsDistanceRef.current += delta;
               lastPosRef.current = current;
+            }
+            // Record the trace (skip near-duplicate fixes to reduce noise).
+            if (routeRef.current.length === 0 || delta > 7) {
+              routeRef.current.push(current);
+              if (routeRef.current.length > 2500) routeRef.current.shift();
             }
             syncDisplay();
           },
@@ -227,6 +244,11 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       simTimerRef.current = window.setInterval(() => {
         if (statusRef.current === 'running') {
           stepCounterRef.current.addSteps(SIM_STEPS_PER_SECOND);
+          // Extend the synthetic walking route (~1.3 m per tick) for the map trace.
+          const last = routeRef.current[routeRef.current.length - 1];
+          const lat = (last ? last.latitude : 14.599512) + 0.000012 + (Math.random() - 0.5) * 0.000008;
+          const lng = (last ? last.longitude : 120.984222) + 0.000012 + (Math.random() - 0.5) * 0.000008;
+          routeRef.current.push({ latitude: lat, longitude: lng });
           syncDisplay();
         }
       }, 1000);
@@ -265,7 +287,8 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
       distanceSource: gpsModeRef.current ? 'gps' : 'estimated',
       startTime: startedAtRef.current,
       endTime: Date.now(),
-      activeSeconds: Math.round(activeMs / 1000)
+      activeSeconds: Math.round(activeMs / 1000),
+      route: routeRef.current.slice()
     };
     statusRef.current = 'finished';
     setStatus('finished');
@@ -447,6 +470,20 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
               </p>
             </div>
           </div>
+
+          {/* Live route trace */}
+          {routePoints.length > 0 ? (
+            <RouteMap
+              points={routePoints}
+              accent={isJm ? '#10b981' : '#ec4899'}
+              height={220}
+              autoFit
+            />
+          ) : running || paused ? (
+            <p className="text-[11px] font-bold text-slate-400 text-center border border-dashed border-slate-200 rounded-2xl py-4">
+              📡 Waiting for GPS signal to trace your route…
+            </p>
+          ) : null}
 
           {(running || paused) && (
             <>

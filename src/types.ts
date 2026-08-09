@@ -1,5 +1,11 @@
 export type UserType = 'JM' | 'KAT';
 
+/** A geographic coordinate used for GPS route tracking. */
+export interface LatLng {
+  latitude: number;
+  longitude: number;
+}
+
 export type ExerciseCategory = 
   | 'Cardio' 
   | 'Strength' 
@@ -32,6 +38,7 @@ export interface WorkoutLog {
   distanceMeters?: number; // distance traveled (GPS when allowed, else steps × stride)
   startTime?: number; // Unix epoch ms when the activity started
   endTime?: number; // Unix epoch ms when the activity ended
+  route?: LatLng[]; // GPS trace of the walked/running route
 }
 
 export interface UserProfile {
