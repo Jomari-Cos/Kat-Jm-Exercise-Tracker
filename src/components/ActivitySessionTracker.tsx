@@ -360,21 +360,39 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
     setRoutePoints(routeRef.current.slice());
     setError(null);
 
-    // Persist the finished-but-not-yet-logged session so a reload mid-flow
-    // doesn't lose it — the log form restores it and only the photo is missing.
-    persistSession(buildSnapshot('finished', activeMs, session.endTime));
-
-    onSessionFinish(session);
-
-    // AUTO-SAVE the route map as proof — no button needed. Runs in the background
-    // right when the session ends; the result is attached to the log alongside the photo.
+    // AUTO-SAVE the route map as proof — captured now, BEFORE the camera modal
+    // opens and before listeners are removed, so the map is in a stable state.
     const url = await routeMapRef.current?.capture();
     if (url) {
       mapProofRef.current = url;
       setMapProof(url);
       onMapProofSaved?.(url);
-      // Refresh the snapshot so a restore already includes the map proof.
-      persistSession(buildSnapshot('finished', activeMs, session.endTime));
+    }
+
+    // Include the proof (if captured) in the session handed to the form so the
+    // log never depends on a follow-up async state update.
+    const sessionWithProof: StepSession = mapProofRef.current
+      ? { ...session, mapProofUrl: mapProofRef.current }
+      : session;
+
+    // Persist the finished-but-not-yet-logged session so a reload mid-flow
+    // doesn't lose it — the log form restores it and only the photo is missing.
+    persistSession(buildSnapshot('finished', activeMs, session.endTime));
+
+    onSessionFinish(sessionWithProof);
+  };
+
+  /** Save a map proof manually (from the map's built-in "Save Map" button). */
+  const handleSaveMapProof = (url: string) => {
+    mapProofRef.current = url;
+    setMapProof(url);
+    onMapProofSaved?.(url);
+    // Keep the persisted snapshot in sync so a reload doesn't lose the proof.
+    const st = statusRef.current;
+    if (st === 'running' || st === 'paused') {
+      persistSession(buildSnapshot(st, st === 'running' ? getActiveMs() : activeBaseRef.current));
+    } else if (st === 'finished') {
+      persistSession(buildSnapshot('finished', finalElapsedMs));
     }
   };
 
@@ -638,6 +656,7 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
               accent={isJm ? '#10b981' : '#ec4899'}
               height={220}
               autoFit
+              onSaveScreenshot={handleSaveMapProof}
             />
           ) : running || paused ? (
             <p className="text-[11px] font-bold text-slate-400 text-center border border-dashed border-slate-200 rounded-2xl py-4">
@@ -652,6 +671,13 @@ export const ActivitySessionTracker: React.FC<ActivitySessionTrackerProps> = ({
                 Map proof saved ✓ — it will be logged together with your photo.
               </p>
             </div>
+          )}
+
+          {!mapProof && finished && routePoints.length >= 2 && (
+            <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2">
+              The route was recorded, but the map preview couldn't be auto-captured.
+              Tap “Save Map” on the map above to add it as proof.
+            </p>
           )}
 
           {(running || paused) && (
